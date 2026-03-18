@@ -51,6 +51,7 @@ struct CorteResult {
     int     totalUnidadesDevueltas   = 0;
     double  totalPagoAlDistribuidor  = 0.0;  // SUM(costo * cantidad_vendida)
     double  totalDevolucion          = 0.0;  // SUM(costo * cantidad_devuelta)
+    double  gananciaEstimada         = 0.0;  // SUM((precio_final - costo) * cantidad_vendida)
     bool    isValid                  = false;
 };
 

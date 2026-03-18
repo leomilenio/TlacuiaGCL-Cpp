@@ -137,14 +137,15 @@ CorteResult ProductoRepository::calcularCorte(int64_t concesionId) const {
             SUM(cantidad_recibida)                             AS sum_qty_rec,
             SUM(cantidad_vendida)                              AS sum_qty_vend,
             SUM(cantidad_recibida - cantidad_vendida)          AS sum_qty_dev,
-            SUM(costo * cantidad_vendida)                      AS sum_pago_dist,
-            SUM(costo * (cantidad_recibida - cantidad_vendida)) AS sum_devolucion,
-            SUM(precio_final * cantidad_vendida)               AS sum_precio_final,
-            SUM(costo)                                         AS sum_costo,
-            SUM(comision)                                      AS sum_comision,
-            SUM(iva_trasladado)                                AS sum_iva_trasladado,
-            SUM(iva_acreditable)                               AS sum_iva_acreditable,
-            SUM(iva_neto_sat)                                  AS sum_iva_neto
+            SUM(costo * cantidad_vendida)                             AS sum_pago_dist,
+            SUM(costo * (cantidad_recibida - cantidad_vendida))      AS sum_devolucion,
+            SUM(precio_final * cantidad_vendida)                     AS sum_precio_final,
+            SUM((precio_final - costo) * cantidad_vendida)           AS sum_ganancia,
+            SUM(costo)                                               AS sum_costo,
+            SUM(comision)                                            AS sum_comision,
+            SUM(iva_trasladado)                                      AS sum_iva_trasladado,
+            SUM(iva_acreditable)                                     AS sum_iva_acreditable,
+            SUM(iva_neto_sat)                                        AS sum_iva_neto
         FROM productos_calculados
         WHERE concesion_id = :cid
     )");
@@ -162,6 +163,7 @@ CorteResult ProductoRepository::calcularCorte(int64_t concesionId) const {
     r.totalPagoAlDistribuidor  = q.value("sum_pago_dist").toDouble();
     r.totalDevolucion          = q.value("sum_devolucion").toDouble();
     r.totalPrecioFinal         = q.value("sum_precio_final").toDouble();
+    r.gananciaEstimada         = q.value("sum_ganancia").toDouble();
     r.totalCosto               = q.value("sum_costo").toDouble();
     r.totalComision            = q.value("sum_comision").toDouble();
     r.totalIvaTrasladado       = q.value("sum_iva_trasladado").toDouble();

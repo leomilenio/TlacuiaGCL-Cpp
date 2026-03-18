@@ -113,17 +113,20 @@ bool CortePdfExporter::exportar(const Calculadora::ConcesionRecord&       conces
 <table style="margin-left:auto;">
   <tr><td class="lbl">Total a pagar al distribuidor:</td><td class="val">%1</td></tr>
   <tr><td class="lbl">Total devoluciones (piezas):</td><td class="val">%2</td></tr>
+  <tr><td class="lbl">Ganancia estimada (comision):</td>
+      <td class="val" style="color:#2E7D32;">%3</td></tr>
 </table>
 <div class="fiscal">
 <table style="margin-left:auto;">
-  <tr><td class="lbl">IVA Trasladado:</td><td class="val">%3</td></tr>
-  <tr><td class="lbl">IVA Acreditable:</td><td class="val">%4</td></tr>
-  <tr><td class="lbl">IVA Neto a SAT:</td><td class="val">%5</td></tr>
+  <tr><td class="lbl">IVA Trasladado:</td><td class="val">%4</td></tr>
+  <tr><td class="lbl">IVA Acreditable:</td><td class="val">%5</td></tr>
+  <tr><td class="lbl">IVA Neto a SAT:</td><td class="val">%6</td></tr>
 </table>
 </div>
 </div>
 )").arg(fmt(corte.totalPagoAlDistribuidor),
         QString::number(corte.totalUnidadesDevueltas),
+        fmt(corte.gananciaEstimada),
         fmt(corte.totalIvaTrasladado),
         fmt(corte.totalIvaAcreditable),
         fmt(corte.totalIvaNetoPagar));

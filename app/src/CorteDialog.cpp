@@ -56,6 +56,17 @@ void CorteDialog::setupUi() {
     title->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(title);
 
+    // Banner de solo lectura (concesion ya cerrada)
+    const bool readOnly = !m_concesion.activa;
+    if (readOnly) {
+        auto* banner = new QLabel(
+            "\u26A0  Concesion cerrada \u2014 solo lectura. El corte no puede modificarse.");
+        banner->setStyleSheet(
+            "background:#FFF3E0; color:#E65100; padding:6px 10px;"
+            "border-radius:4px; font-weight:bold;");
+        mainLayout->addWidget(banner);
+    }
+
     auto addSep = [&]() {
         auto* s = new QFrame(); s->setFrameShape(QFrame::HLine);
         mainLayout->addWidget(s);
@@ -121,6 +132,15 @@ void CorteDialog::setupUi() {
 
     m_tabla->resizeColumnsToContents();
     m_tabla->horizontalHeader()->setSectionResizeMode(COL_PRODUCTO, QHeaderView::Stretch);
+
+    // Deshabilitar edicion si la concesion ya esta cerrada
+    if (readOnly) {
+        for (int i = 0; i < m_tabla->rowCount(); ++i) {
+            if (auto* spin = qobject_cast<QSpinBox*>(m_tabla->cellWidget(i, COL_VEND)))
+                spin->setEnabled(false);
+        }
+    }
+
     mainLayout->addWidget(m_tabla);
 
     addSep();
@@ -130,15 +150,20 @@ void CorteDialog::setupUi() {
     totalesForm->setLabelAlignment(Qt::AlignRight);
     m_lblPagoTotal = new QLabel("-"); m_lblPagoTotal->setAlignment(Qt::AlignRight);
     m_lblDevTotal  = new QLabel("-"); m_lblDevTotal->setAlignment(Qt::AlignRight);
+    m_lblGanancia  = new QLabel("-"); m_lblGanancia->setAlignment(Qt::AlignRight);
     m_lblIvaTrasl  = new QLabel("-"); m_lblIvaTrasl->setAlignment(Qt::AlignRight);
     m_lblIvaAcred  = new QLabel("-"); m_lblIvaAcred->setAlignment(Qt::AlignRight);
     m_lblIvaNeto   = new QLabel("-"); m_lblIvaNeto->setAlignment(Qt::AlignRight);
 
     QFont bf = m_lblPagoTotal->font(); bf.setBold(true);
     m_lblPagoTotal->setFont(bf);
+    QFont gf = m_lblGanancia->font(); gf.setBold(true);
+    m_lblGanancia->setFont(gf);
+    m_lblGanancia->setStyleSheet("color: #2E7D32;");
 
     totalesForm->addRow("Total a pagar al distribuidor:",   m_lblPagoTotal);
     totalesForm->addRow("Total devoluciones (piezas):",     m_lblDevTotal);
+    totalesForm->addRow("Ganancia estimada (comision):",    m_lblGanancia);
     totalesForm->addRow("IVA Trasladado:",                  m_lblIvaTrasl);
     totalesForm->addRow("IVA Acreditable:",                 m_lblIvaAcred);
     totalesForm->addRow("IVA Neto a SAT:",                  m_lblIvaNeto);
@@ -153,6 +178,7 @@ void CorteDialog::setupUi() {
     auto* btnCancel = new QPushButton("Cancelar");
     m_btnConfirmar->setObjectName("primaryButton");
     m_btnConfirmar->setDefault(true);
+    m_btnConfirmar->setVisible(!readOnly);
     btnRow->addWidget(m_btnPdf);
     btnRow->addStretch();
     btnRow->addWidget(btnCancel);
@@ -190,17 +216,19 @@ void CorteDialog::onCantidadesChanged() {
 void CorteDialog::recalcularTotales() {
     double pagoTotal = 0.0;
     int    devTotal  = 0;
+    double ganancia  = 0.0;
     double ivaTrasl  = 0.0;
     double ivaAcred  = 0.0;
     double ivaNeto   = 0.0;
 
     for (int i = 0; i < m_productos.size(); ++i) {
         auto* spin = qobject_cast<QSpinBox*>(m_tabla->cellWidget(i, COL_VEND));
-        int vendida = spin ? spin->value() : m_productos[i].cantidadVendida;
+        int vendida  = spin ? spin->value() : m_productos[i].cantidadVendida;
         int devuelta = m_productos[i].cantidadRecibida - vendida;
 
         pagoTotal += m_productos[i].costo * vendida;
         devTotal  += devuelta;
+        ganancia  += (m_productos[i].precioFinal - m_productos[i].costo) * vendida;
         ivaTrasl  += m_productos[i].ivaTrasladado;
         ivaAcred  += m_productos[i].ivaAcreditable;
         ivaNeto   += m_productos[i].ivaNetoPagar;
@@ -209,6 +237,7 @@ void CorteDialog::recalcularTotales() {
     QLocale loc;
     m_lblPagoTotal->setText(loc.toCurrencyString(pagoTotal));
     m_lblDevTotal->setText(QString::number(devTotal) + " piezas");
+    m_lblGanancia->setText(loc.toCurrencyString(ganancia));
     m_lblIvaTrasl->setText(loc.toCurrencyString(ivaTrasl));
     m_lblIvaAcred->setText(loc.toCurrencyString(ivaAcred));
     m_lblIvaNeto->setText(loc.toCurrencyString(ivaNeto));
@@ -233,6 +262,11 @@ void CorteDialog::onExportarPdfClicked() {
     }
 
     Calculadora::CorteResult corte = m_productoRepo.calcularCorte(m_concesion.id);
+    // Recalcular ganancia con los valores actuales del dialogo (pueden diferir de la DB)
+    double gananciaActual = 0.0;
+    for (const auto& p : productosActuales)
+        gananciaActual += (p.precioFinal - p.costo) * p.cantidadVendida;
+    corte.gananciaEstimada = gananciaActual;
 
     if (!CortePdfExporter::exportar(m_concesion, productosActuales, corte, filePath)) {
         QMessageBox::critical(this, "Error", "No se pudo generar el PDF.");

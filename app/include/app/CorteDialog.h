@@ -40,6 +40,7 @@ private:
     QTableWidget* m_tabla         = nullptr;
     QLabel*       m_lblPagoTotal  = nullptr;
     QLabel*       m_lblDevTotal   = nullptr;
+    QLabel*       m_lblGanancia   = nullptr;
     QLabel*       m_lblIvaTrasl   = nullptr;
     QLabel*       m_lblIvaAcred   = nullptr;
     QLabel*       m_lblIvaNeto    = nullptr;
