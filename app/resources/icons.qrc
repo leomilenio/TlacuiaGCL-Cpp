@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/icons">
+    <file>icons/icon.icns</file>
+    <file>icons/icon.ico</file>
+  </qresource>
+  <qresource prefix="/styles">
+    <file>styles/tlacuia.qss</file>
+  </qresource>
+</RCC>
