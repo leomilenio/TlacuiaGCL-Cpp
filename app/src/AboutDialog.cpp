@@ -14,7 +14,7 @@ namespace App {
 AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
 {
-    setWindowTitle("Acerca de Tlacuia");
+    setWindowTitle("Acerca de TlacuiaGCL");
     setFixedWidth(400);
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
 
@@ -24,11 +24,9 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     // ---- Logo ----
     auto* logoLbl = new QLabel();
-    QPixmap icon = QApplication::windowIcon().pixmap(128, 128);
-    if (!icon.isNull())
-        logoLbl->setPixmap(icon);
-    else
-        logoLbl->setText("📚");
+    QPixmap logo(":/icons/TlacuiaLogo.png");
+    if (!logo.isNull())
+        logoLbl->setPixmap(logo.scaledToWidth(160, Qt::SmoothTransformation));
     logoLbl->setAlignment(Qt::AlignHCenter);
     main->addWidget(logoLbl);
     main->addSpacing(14);
@@ -87,14 +85,14 @@ AboutDialog::AboutDialog(QWidget* parent)
     main->addWidget(devLbl);
     main->addSpacing(6);
 
-    auto* contactLbl = new QLabel("arle.com.mx");
+    auto* contactLbl = new QLabel("arlesoftware.com.mx");
     contactLbl->setAlignment(Qt::AlignHCenter);
-    contactLbl->setStyleSheet("color: #00796B; font-size: 12px;");
+    contactLbl->setStyleSheet("color: #790000; font-size: 12px;");
     main->addWidget(contactLbl);
     main->addSpacing(20);
 
     // ---- Licencia ----
-    auto* licLbl = new QLabel("Licencia: Propietario — Todos los derechos reservados.");
+    auto* licLbl = new QLabel("Desarrollado bajo licencia MIT");
     licLbl->setAlignment(Qt::AlignHCenter);
     licLbl->setStyleSheet("color: palette(mid); font-size: 11px;");
     main->addWidget(licLbl);

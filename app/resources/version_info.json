@@ -1,0 +1,4 @@
+{
+  "version": "0.5.0",
+  "notes": "Sprint 6 completado: documentos adjuntos por concesion, buscador y filtro en la lista de concesiones, ganancia estimada en el corte (con recalculo en tiempo real y exportacion a PDF), modo solo-lectura en cortes de concesiones cerradas, y verificador de actualizaciones."
+}

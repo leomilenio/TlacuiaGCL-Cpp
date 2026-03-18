@@ -29,6 +29,7 @@ add_executable(CalculadoraPapeleria WIN32 MACOSX_BUNDLE
     include/app/CortePdfExporter.h
     include/app/SplashConcesionesWindow.h
     include/app/AboutDialog.h
+    include/app/UpdateDialog.h
     src/MainWindow.cpp
     src/CalculatorWidget.cpp
     src/HistoryWidget.cpp
@@ -43,6 +44,7 @@ add_executable(CalculadoraPapeleria WIN32 MACOSX_BUNDLE
     src/CortePdfExporter.cpp
     src/SplashConcesionesWindow.cpp
     src/AboutDialog.cpp
+    src/UpdateDialog.cpp
 )
 
 target_include_directories(CalculadoraPapeleria
@@ -50,7 +52,7 @@ target_include_directories(CalculadoraPapeleria
 )
 
 target_link_libraries(CalculadoraPapeleria
-    PRIVATE core_lib Qt6::Widgets Qt6::PrintSupport
+    PRIVATE core_lib Qt6::Widgets Qt6::PrintSupport Qt6::Network
 )
 
 set_target_properties(CalculadoraPapeleria PROPERTIES

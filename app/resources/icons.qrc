@@ -3,8 +3,12 @@
   <qresource prefix="/icons">
     <file>icons/icon.icns</file>
     <file>icons/icon.ico</file>
+    <file alias="TlacuiaLogo.png">icons/TlacuiaLogo.png</file>
   </qresource>
   <qresource prefix="/styles">
     <file>styles/tlacuia.qss</file>
+  </qresource>
+  <qresource prefix="/app">
+    <file>version_info.json</file>
   </qresource>
 </RCC>

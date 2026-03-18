@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Sql PrintSupport)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Sql PrintSupport Network)
 
 qt_standard_project_setup()
 

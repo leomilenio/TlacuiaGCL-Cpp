@@ -37,6 +37,7 @@ public slots:
 
 private slots:
     void onCalculadoraRequested();
+    void onBuscarActualizacionesRequested();
     void onAboutRequested();
 
 private:

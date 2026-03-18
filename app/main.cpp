@@ -8,10 +8,15 @@
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
+    // IMPORTANTE: OrganizationName y ApplicationName son identificadores internos
+    // que determinan la ruta de la base de datos en disco. NO deben cambiar nunca,
+    // aunque cambie el nombre comercial o el dominio del desarrollador.
+    // macOS: ~/Library/Application Support/ARLE/TlacuiaGCL/data.db
+    // Windows: %APPDATA%\ARLE\TlacuiaGCL\data.db
     app.setOrganizationName("ARLE");
-    app.setOrganizationDomain("arle.com.mx");
-    app.setApplicationName("CalculadoraPapeleria");
-    app.setApplicationVersion("0.4.0");
+    app.setOrganizationDomain("arlesoftware.com.mx");
+    app.setApplicationName("TlacuiaGCL");
+    app.setApplicationVersion("0.5.0");
 
 #ifdef Q_OS_WIN
     app.setWindowIcon(QIcon(":/icons/icon.ico"));

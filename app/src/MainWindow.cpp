@@ -1,5 +1,6 @@
 #include "app/MainWindow.h"
 #include "app/AboutDialog.h"
+#include "app/UpdateDialog.h"
 #include "app/CalculatorWidget.h"
 #include "app/HistoryWidget.h"
 #include "app/ConcesionesWidget.h"
@@ -58,6 +59,8 @@ void MainWindow::setupMenuBar() {
     toolsMenu->addAction("&Calculadora de Precios", this, &MainWindow::onCalculadoraRequested);
 
     QMenu* helpMenu = menuBar()->addMenu("&Ayuda");
+    helpMenu->addAction("&Buscar actualizaciones...", this, &MainWindow::onBuscarActualizacionesRequested);
+    helpMenu->addSeparator();
     helpMenu->addAction("&Acerca de", this, &MainWindow::onAboutRequested);
 }
 
@@ -150,6 +153,11 @@ void MainWindow::onCalculadoraRequested() {
     calc->disableSaving();
     layout->addWidget(calc);
     dlg->show();
+}
+
+void MainWindow::onBuscarActualizacionesRequested() {
+    auto* dlg = new UpdateDialog(this);
+    dlg->exec();
 }
 
 void MainWindow::onAboutRequested() {
