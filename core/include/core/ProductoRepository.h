@@ -64,6 +64,9 @@ public:
     // Guarda un registro y retorna el id generado, o -1 si falla.
     [[nodiscard]] int64_t save(const ProductoRecord& record);
 
+    // Actualiza un producto existente (todos los campos financieros + datos).
+    bool update(const ProductoRecord& record);
+
     // Todos los registros ordenados por fecha DESC.
     [[nodiscard]] QList<ProductoRecord> findAll() const;
 

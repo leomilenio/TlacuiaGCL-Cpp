@@ -62,6 +62,51 @@ int64_t ProductoRepository::save(const ProductoRecord& record) {
     return q.lastInsertId().toLongLong();
 }
 
+bool ProductoRepository::update(const ProductoRecord& record) {
+    QSqlQuery q(m_db.database());
+    q.prepare(R"(
+        UPDATE productos_calculados SET
+            nombre_producto  = :nombre_producto,
+            tipo_producto    = :tipo_producto,
+            isbn             = :isbn,
+            precio_final     = :precio_final,
+            costo            = :costo,
+            comision         = :comision,
+            iva_trasladado   = :iva_trasladado,
+            iva_acreditable  = :iva_acreditable,
+            iva_neto_sat     = :iva_neto_sat,
+            escenario        = :escenario,
+            tiene_cfdi       = :tiene_cfdi,
+            cantidad_recibida = :cantidad_recibida
+        WHERE id = :id
+    )");
+
+    q.bindValue(":nombre_producto",  record.nombreProducto);
+    q.bindValue(":tipo_producto",
+        record.tipoProducto == TipoProducto::Libro ? "libro" : "papeleria");
+    auto optStr = [](const QString& s) -> QVariant {
+        return s.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(s);
+    };
+    q.bindValue(":isbn",             optStr(record.isbn));
+    q.bindValue(":precio_final",     record.precioFinal);
+    q.bindValue(":costo",            record.costo);
+    q.bindValue(":comision",         record.comision);
+    q.bindValue(":iva_trasladado",   record.ivaTrasladado);
+    q.bindValue(":iva_acreditable",  record.ivaAcreditable);
+    q.bindValue(":iva_neto_sat",     record.ivaNetoPagar);
+    q.bindValue(":escenario",        record.escenario == Escenario::ProductoPropio
+                                         ? "propio" : "concesion");
+    q.bindValue(":tiene_cfdi",       record.tieneCFDI ? 1 : 0);
+    q.bindValue(":cantidad_recibida", record.cantidadRecibida);
+    q.bindValue(":id",               static_cast<qlonglong>(record.id));
+
+    if (!q.exec()) {
+        qCritical() << "Error actualizando producto:" << q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
 ProductoRecord ProductoRepository::mapRow(const QSqlQuery& q) const {
     ProductoRecord r;
     r.id              = q.value("id").toLongLong();

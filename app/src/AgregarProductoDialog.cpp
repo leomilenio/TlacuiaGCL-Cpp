@@ -20,6 +20,7 @@ AgregarProductoDialog::AgregarProductoDialog(int64_t concesionId,
                                              const QString& concesionLabel,
                                              Calculadora::PriceCalculator& calculator,
                                              double comisionPct,
+                                             bool   facturacion,
                                              QWidget* parent)
     : QDialog(parent)
     , m_concesionId(concesionId)
@@ -29,6 +30,58 @@ AgregarProductoDialog::AgregarProductoDialog(int64_t concesionId,
     setupUi(concesionLabel);
     setupConnections();
     setWindowTitle("Agregar Producto a Concesion");
+
+    // Pre-seleccionar CFDI segun la propiedad del distribuidor
+    if (facturacion) {
+        m_radioConCFDI->setChecked(true);
+    } else {
+        m_radioSinCFDI->setChecked(true);
+    }
+}
+
+AgregarProductoDialog::AgregarProductoDialog(const Calculadora::ProductoRecord& existing,
+                                             const QString& concesionLabel,
+                                             Calculadora::PriceCalculator& calculator,
+                                             double comisionPct,
+                                             bool   facturacion,
+                                             QWidget* parent)
+    : QDialog(parent)
+    , m_concesionId(existing.concesionId.value_or(0))
+    , m_productoId(existing.id)
+    , m_comisionPct(comisionPct)
+    , m_calculator(calculator)
+{
+    setupUi(concesionLabel);
+    setupConnections();
+    setWindowTitle("Editar Producto");
+    m_btnAgregar->setText("Guardar cambios");
+
+    // Pre-seleccionar CFDI
+    if (existing.tieneCFDI)
+        m_radioConCFDI->setChecked(true);
+    else
+        m_radioSinCFDI->setChecked(true);
+
+    // Pre-seleccionar tipo de producto
+    if (existing.tipoProducto == Calculadora::TipoProducto::Libro) {
+        m_radioLibro->setChecked(true);
+        m_isbnLabel->setVisible(true);
+        m_txtIsbn->setVisible(true);
+        m_txtIsbn->setText(existing.isbn);
+    } else {
+        m_radioPapeleria->setChecked(true);
+    }
+
+    // Pre-rellenar datos del producto
+    m_txtNombre->setText(existing.nombreProducto);
+    m_spinCantidad->setValue(existing.cantidadRecibida);
+
+    // El campo `costo` en DB siempre almacena el precioNeto del proveedor (pre-IVA),
+    // tanto para Con CFDI como Sin CFDI (ver PriceCalculator: r.costo = precioNetoProveedor).
+    m_inputSpin->setValue(existing.costo);
+
+    // Nota: el usuario debe presionar "Calcular" antes de poder guardar
+    // (m_btnAgregar permanece deshabilitado hasta que se calcule)
 }
 
 void AgregarProductoDialog::setupUi(const QString& concesionLabel) {
@@ -120,6 +173,13 @@ void AgregarProductoDialog::setupUi(const QString& concesionLabel) {
     m_desgloseFrame->setVisible(false);
     resLayout->addWidget(m_desgloseFrame);
 
+    // Callout visual — tipo de IVA aplicado
+    m_lbIvaCallout = new QLabel();
+    m_lbIvaCallout->setWordWrap(true);
+    m_lbIvaCallout->setTextFormat(Qt::RichText);
+    m_lbIvaCallout->setVisible(false);
+    resLayout->addWidget(m_lbIvaCallout);
+
     auto* compForm = new QFormLayout();
     compForm->setLabelAlignment(Qt::AlignLeft);
     auto mkLbl = [] { auto* l = new QLabel("-"); l->setAlignment(Qt::AlignRight); return l; };
@@ -196,10 +256,12 @@ void AgregarProductoDialog::onCalcularClicked() {
     double precioNeto = m_inputSpin->value();
     Calculadora::CalculationResult r;
 
+    auto tipo = m_radioLibro->isChecked() ? Calculadora::TipoProducto::Libro
+                                          : Calculadora::TipoProducto::Papeleria;
     if (m_radioConCFDI->isChecked())
-        r = m_calculator.calcularConcesionConCFDI(precioNeto, m_comisionPct);
+        r = m_calculator.calcularConcesionConCFDI(precioNeto, m_comisionPct, tipo);
     else
-        r = m_calculator.calcularConcesionSinCFDI(precioNeto, m_comisionPct);
+        r = m_calculator.calcularConcesionSinCFDI(precioNeto, m_comisionPct, tipo);
 
     if (!r.isValid) {
         QMessageBox::warning(this, "Entrada invalida",
@@ -218,25 +280,66 @@ void AgregarProductoDialog::displayResult(const Calculadora::CalculationResult& 
     QLocale loc;
     auto fmt = [&](double v) { return loc.toCurrencyString(v); };
 
+    const bool esLibro = (r.tipoProducto == Calculadora::TipoProducto::Libro);
+
     m_lbPrecioFinal->setText(fmt(r.precioFinal));
     m_lbCosto->setText(fmt(r.costo));
     m_lbComision->setText(fmt(r.comision));
-    m_lbIvaTrasladado->setText(fmt(r.ivaTrasladado));
-    m_lbIvaAcreditable->setText(r.tieneCFDI ? fmt(r.ivaAcreditable)
-                                              : "$0.00  (sin CFDI)");
-    m_lbIvaNetoPagar->setText(fmt(r.ivaNetoPagar));
 
+    if (esLibro) {
+        m_lbIvaTrasladado->setText("$0.00  (Tasa 0% — Art. 2-A LIVA)");
+        if (r.tieneCFDI)
+            m_lbIvaAcreditable->setText(fmt(r.ivaAcreditable) + "  (saldo a favor)");
+        else
+            m_lbIvaAcreditable->setText("$0.00  (sin CFDI — no acreditable)");
+        m_lbIvaNetoPagar->setText(r.tieneCFDI
+            ? fmt(r.ivaNetoPagar) + "  (saldo a favor)"
+            : "$0.00");
+    } else {
+        m_lbIvaTrasladado->setText(fmt(r.ivaTrasladado));
+        m_lbIvaAcreditable->setText(r.tieneCFDI ? fmt(r.ivaAcreditable)
+                                                 : "$0.00  (sin CFDI)");
+        m_lbIvaNetoPagar->setText(fmt(r.ivaNetoPagar));
+    }
+
+    // Callout visual — tipo de IVA
+    if (esLibro) {
+        const QString detalle = r.tieneCFDI
+            ? "IVA pagado al proveedor (16%) genera <b>saldo a favor</b> de la libreria."
+            : "Sin CFDI: IVA pagado al proveedor se absorbe como costo (no recuperable).";
+        m_lbIvaCallout->setText(
+            QString("<div style='background:#E8F5E9;border-left:3px solid #4CAF50;"
+                    "padding:6px 8px;'>"
+                    "<b style='color:#1B5E20;'>&#10003; Tasa 0% — Libro (LIVA Art. 2-A fr. IV)</b><br>"
+                    "<span style='color:#388E3C;font-size:11px;'>"
+                    "No se cobra IVA al cliente. %1</span></div>").arg(detalle));
+        m_lbIvaCallout->setVisible(true);
+    } else {
+        m_lbIvaCallout->setText(
+            QString("<div style='background:#FFF8E1;border-left:3px solid #FF9800;"
+                    "padding:6px 8px;'>"
+                    "<b style='color:#E65100;'>IVA 16% incluido en precio al cliente: %1</b>"
+                    "</div>").arg(fmt(r.ivaTrasladado)));
+        m_lbIvaCallout->setVisible(true);
+    }
+
+    // Callout de pasos — solo para Papeleria Sin CFDI
     const bool sinCFDI = !r.tieneCFDI;
-    if (sinCFDI) {
-        const double costoReal = r.costo + r.ivaAbsorbido;
+    if (sinCFDI && !esLibro) {
+        const double costoEfectivo = r.costo + r.ivaAbsorbido;
         m_lbDesglose->setText(
-            QString("<b>IVA no acreditable — la libreria lo absorbe:</b><br>"
-                    "<tt>&nbsp;&nbsp;%1 &times; 0.16 = %2 (absorbido)&nbsp;&nbsp;"
-                    "costo real: %3</tt><br>"
-                    "<tt>&nbsp;&nbsp;%1 &times; 1.30 = %4 (con comision)&nbsp;&nbsp;"
-                    "%4 &times; 1.16 = %5</tt>")
-                .arg(fmt(r.costo), fmt(r.ivaAbsorbido), fmt(costoReal),
-                     fmt(r.costo + r.comision), fmt(r.precioFinal)));
+            QString("<b>IVA no acreditable — se absorbe como costo:</b><br>"
+                    "<tt>&nbsp;&nbsp;Paso 1: %1 &times; 1.16 = %2&nbsp;&nbsp;"
+                    "(IVA absorbido: %3)</tt><br>"
+                    "<tt>&nbsp;&nbsp;Paso 2: %2 / 0.54 = %4&nbsp;&nbsp;"
+                    "(Comision: %5)</tt>")
+                .arg(fmt(r.costo), fmt(costoEfectivo), fmt(r.ivaAbsorbido),
+                     fmt(r.precioFinal), fmt(r.comision)));
+    } else if (sinCFDI && esLibro && r.ivaAbsorbido > 0.0) {
+        m_lbDesglose->setText(
+            QString("<b>Libro sin CFDI — IVA pagado al proveedor no recuperable:</b><br>"
+                    "<tt>&nbsp;&nbsp;IVA absorbido = %1 &times; 0.16 = %2</tt>")
+                .arg(fmt(r.costo), fmt(r.ivaAbsorbido)));
     }
     m_desgloseFrame->setVisible(sinCFDI);
 }
@@ -246,6 +349,12 @@ void AgregarProductoDialog::onTipoProductoChanged() {
     m_isbnLabel->setVisible(esLibro);
     m_txtIsbn->setVisible(esLibro);
     if (!esLibro) m_txtIsbn->clear();
+    // Resetear resultado: la formula cambia segun tipo (tasa 0% vs 16%)
+    if (m_result.has_value()) {
+        m_result.reset();
+        m_resultsGroup->setVisible(false);
+        m_btnAgregar->setEnabled(false);
+    }
     adjustSize();
 }
 
@@ -264,6 +373,7 @@ void AgregarProductoDialog::onAgregarClicked() {
     accept();
 }
 
+int64_t  AgregarProductoDialog::productoId()    const { return m_productoId; }
 QString AgregarProductoDialog::nombreProducto() const { return m_txtNombre->text().trimmed(); }
 Calculadora::TipoProducto AgregarProductoDialog::tipoProducto() const {
     return m_radioLibro->isChecked() ? Calculadora::TipoProducto::Libro

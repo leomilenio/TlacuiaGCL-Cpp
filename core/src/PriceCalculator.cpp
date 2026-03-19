@@ -60,16 +60,20 @@ CalculationResult PriceCalculator::calcularProductoPropio(double precioFinal, bo
 
 // Escenario 2a: Concesion con CFDI del proveedor.
 //
-// Modelo de markup: la comision (30%) se aplica SOBRE el precio neto del proveedor.
-// Al hacer el corte, el proveedor recupera integramente su costo y la libreria
-// retiene el 30% acordado.
-//
-//   precioSinIVA   = precioNeto * 1.30    (proveedor + comision libreria)
-//   precioFinal    = precioSinIVA * 1.16  (agrega IVA cobrado al cliente)
+// Papeleria (IVA 16%):
+//   precioSinIVA   = precioNeto * (1 + comision%)
+//   precioFinal    = precioSinIVA * 1.16  (IVA cobrado al cliente)
 //   ivaAcreditable = precioNeto * 0.16    (IVA pagado al proveedor, recuperable con CFDI)
 //   ivaNetoPagar   = ivaTrasladado - ivaAcreditable
+//
+// Libro (tasa 0%, LIVA Art. 2-A fr. IV):
+//   precioFinal    = precioNeto * (1 + comision%)  [sin IVA al cliente — tasa 0%]
+//   ivaTrasladado  = 0
+//   ivaAcreditable = precioNeto * 0.16  [IVA pagado al proveedor genera saldo a favor]
+//   ivaNetoPagar   = -ivaAcreditable    [saldo a favor del contribuyente]
 CalculationResult PriceCalculator::calcularConcesionConCFDI(double precioNetoProveedor,
-                                                             double comisionPct) const {
+                                                             double comisionPct,
+                                                             TipoProducto tipo) const {
     if (!isValidPrice(precioNetoProveedor)) {
         CalculationResult r;
         r.isValid = false;
@@ -78,32 +82,50 @@ CalculationResult PriceCalculator::calcularConcesionConCFDI(double precioNetoPro
     }
     const double comisionRatio = comisionPct / 100.0;
     CalculationResult r;
-    const double precioSinIVA = precioNetoProveedor * (1.0 + comisionRatio);
-    r.precioFinal    = precioSinIVA * (1.0 + PriceRatios::IVA);
-    r.costo          = precioNetoProveedor;
-    r.comision       = precioNetoProveedor * comisionRatio;
-    r.ivaTrasladado  = precioSinIVA * PriceRatios::IVA;
-    r.ivaAcreditable = precioNetoProveedor * PriceRatios::IVA;
-    r.ivaNetoPagar   = r.ivaTrasladado - r.ivaAcreditable;
-    r.ivaAbsorbido   = 0.0;
-    r.escenario      = Escenario::Concesion;
-    r.tieneCFDI      = true;
-    r.isValid        = true;
+    r.costo        = precioNetoProveedor;
+    r.comision     = precioNetoProveedor * comisionRatio;
+    r.tipoProducto = tipo;
+    r.escenario    = Escenario::Concesion;
+    r.tieneCFDI    = true;
+    r.ivaAbsorbido = 0.0;
+    r.isValid      = true;
+
+    if (tipo == TipoProducto::Libro) {
+        // Tasa 0%: precioFinal = precioNeto * (1 + comision%) — sin IVA al cliente
+        const double precioSinIVA = precioNetoProveedor * (1.0 + comisionRatio);
+        r.precioFinal    = precioSinIVA;
+        r.ivaTrasladado  = 0.0;
+        r.ivaAcreditable = precioNetoProveedor * PriceRatios::IVA;  // saldo a favor
+        r.ivaNetoPagar   = -r.ivaAcreditable;
+    } else {
+        // Papeleria (modelo margen): costo = 54% del precioFinal
+        // precioFinal = precioNeto / 0.54  →  comision = 30%pf, IVA = 16%pf
+        r.precioFinal    = precioNetoProveedor / PriceRatios::COSTO;
+        r.comision       = r.precioFinal * PriceRatios::COMISION;
+        r.ivaTrasladado  = r.precioFinal * PriceRatios::IVA;
+        r.ivaAcreditable = precioNetoProveedor * PriceRatios::IVA;
+        r.ivaNetoPagar   = r.ivaTrasladado - r.ivaAcreditable;
+    }
     return r;
 }
 
 // Escenario 2b: Concesion sin CFDI.
 //
-// Mismo precio final que Con CFDI (mismo markup 30% + IVA al cliente).
-// La diferencia: la libreria pago IVA al proveedor pero no puede acreditarlo.
-// Ese IVA (ivaAbsorbido) es un costo adicional que reduce el margen efectivo.
-//
-//   precioFinal    = precioNeto * 1.30 * 1.16   (igual que Con CFDI)
-//   ivaAbsorbido   = precioNeto * 0.16           (IVA pagado, no recuperable)
+// Papeleria (IVA 16%):
+//   precioFinal    = precioNeto * (1 + comision%) * 1.16
+//   ivaAbsorbido   = precioNeto * 0.16  (IVA pagado al proveedor, no recuperable)
 //   ivaAcreditable = 0
 //   ivaNetoPagar   = ivaTrasladado (todo se entera a SAT)
+//
+// Libro (tasa 0%, LIVA Art. 2-A fr. IV):
+//   precioFinal    = precioNeto * (1 + comision%)  [sin IVA al cliente]
+//   ivaTrasladado  = 0
+//   ivaAcreditable = 0  (sin CFDI — no recuperable)
+//   ivaAbsorbido   = precioNeto * 0.16  (IVA pagado al proveedor, se absorbe como costo)
+//   ivaNetoPagar   = 0
 CalculationResult PriceCalculator::calcularConcesionSinCFDI(double precioNetoProveedor,
-                                                             double comisionPct) const {
+                                                             double comisionPct,
+                                                             TipoProducto tipo) const {
     if (!isValidPrice(precioNetoProveedor)) {
         CalculationResult r;
         r.isValid = false;
@@ -112,17 +134,32 @@ CalculationResult PriceCalculator::calcularConcesionSinCFDI(double precioNetoPro
     }
     const double comisionRatio = comisionPct / 100.0;
     CalculationResult r;
-    const double precioSinIVA = precioNetoProveedor * (1.0 + comisionRatio);
-    r.precioFinal    = precioSinIVA * (1.0 + PriceRatios::IVA);
-    r.costo          = precioNetoProveedor;
-    r.comision       = precioNetoProveedor * comisionRatio;
-    r.ivaTrasladado  = precioSinIVA * PriceRatios::IVA;
-    r.ivaAcreditable = 0.0;
-    r.ivaNetoPagar   = r.ivaTrasladado;
-    r.ivaAbsorbido   = precioNetoProveedor * PriceRatios::IVA;
-    r.escenario      = Escenario::Concesion;
-    r.tieneCFDI      = false;
-    r.isValid        = true;
+    r.costo        = precioNetoProveedor;
+    r.comision     = precioNetoProveedor * comisionRatio;
+    r.tipoProducto = tipo;
+    r.escenario    = Escenario::Concesion;
+    r.tieneCFDI    = false;
+    r.isValid      = true;
+
+    if (tipo == TipoProducto::Libro) {
+        // Tasa 0%: precioFinal = precioNeto * (1 + comision%) — sin IVA al cliente
+        const double precioSinIVA = precioNetoProveedor * (1.0 + comisionRatio);
+        r.precioFinal    = precioSinIVA;
+        r.ivaTrasladado  = 0.0;
+        r.ivaAcreditable = 0.0;
+        r.ivaNetoPagar   = 0.0;
+        r.ivaAbsorbido   = precioNetoProveedor * PriceRatios::IVA;  // costo no recuperable
+    } else {
+        // Papeleria (modelo margen): costoEfectivo = precioNeto * 1.16 (IVA absorbido)
+        // precioFinal = costoEfectivo / 0.54
+        const double costoEfectivo = precioNetoProveedor * (1.0 + PriceRatios::IVA);
+        r.precioFinal    = costoEfectivo / PriceRatios::COSTO;
+        r.comision       = r.precioFinal * PriceRatios::COMISION;
+        r.ivaTrasladado  = r.precioFinal * PriceRatios::IVA;
+        r.ivaAcreditable = 0.0;
+        r.ivaNetoPagar   = r.ivaTrasladado;
+        r.ivaAbsorbido   = precioNetoProveedor * PriceRatios::IVA;
+    }
     return r;
 }
 

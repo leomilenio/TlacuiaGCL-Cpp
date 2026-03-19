@@ -25,20 +25,32 @@ public:
     CalculationResult calcularProductoPropio(double precioFinal, bool conCFDI = false) const;
 
     // Escenario 2a: Concesion con CFDI.
-    // El IVA pagado al proveedor es acreditable -> costo base = precio neto.
-    // precioFinal = precioNetoProveedor / 0.54
-    // comisionPct: porcentaje de comision (ej. 30.0 = 30%); default = PriceRatios::COMISION * 100
+    // Papeleria (modelo margen, costo = 54% del precio final):
+    //   precioFinal    = precioNeto / 0.54
+    //   comision       = precioFinal * 30%
+    //   ivaTrasladado  = precioFinal * 16%
+    //   ivaAcreditable = precioNeto * 16%   [recuperable con CFDI]
+    //   ivaNetoPagar   = ivaTrasladado - ivaAcreditable
+    // Libro (tasa 0%, LIVA Art. 2-A fr. IV):
+    //   precioFinal    = precioNeto * (1 + comision%)  [sin IVA al cliente]
+    //   ivaAcreditable = precioNeto * 16%  → genera saldo a favor (ivaNetoPagar < 0)
     [[nodiscard]]
     CalculationResult calcularConcesionConCFDI(double precioNetoProveedor,
-                                               double comisionPct = 30.0) const;
+                                               double comisionPct = 30.0,
+                                               TipoProducto tipo  = TipoProducto::Papeleria) const;
 
     // Escenario 2b: Concesion sin CFDI.
-    // El IVA no puede acreditarse, se absorbe en el costo.
-    // costoEfectivo = precioNetoProveedor * 1.16
-    // precioFinal = costoEfectivo / 0.54
+    // Papeleria (modelo margen, IVA pagado al proveedor se absorbe como costo):
+    //   costoEfectivo  = precioNeto * 1.16
+    //   precioFinal    = costoEfectivo / 0.54
+    //   ivaTrasladado  = precioFinal * 16%
+    //   ivaAbsorbido   = precioNeto * 16%   [pagado al proveedor, no recuperable]
+    // Libro (tasa 0%): precioFinal = precioNeto * (1 + comision%)  [sin IVA al cliente]
+    //   ivaAbsorbido   = precioNeto * 16%   [pagado al proveedor, no recuperable]
     [[nodiscard]]
     CalculationResult calcularConcesionSinCFDI(double precioNetoProveedor,
-                                               double comisionPct = 30.0) const;
+                                               double comisionPct = 30.0,
+                                               TipoProducto tipo  = TipoProducto::Papeleria) const;
 
     [[nodiscard]]
     static bool isValidPrice(double price) noexcept;

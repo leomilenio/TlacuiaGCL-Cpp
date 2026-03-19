@@ -10,8 +10,7 @@ class QListWidget;
 class QPushButton;
 class QLabel;
 class QGroupBox;
-class QTableView;
-class QStandardItemModel;
+class QTableWidget;
 class QSplitter;
 class QLineEdit;
 class QComboBox;
@@ -43,6 +42,8 @@ private slots:
     void onEliminarClicked();
     void onAgregarProductoClicked();
     void onVerCorteClicked();
+    void onEditarProducto(int64_t productoId);
+    void onEliminarProducto(int64_t productoId);
     void onVerAlertasClicked();
     void onAdjuntarDocClicked();
     void onAbrirDocClicked();
@@ -71,6 +72,7 @@ private:
     QGroupBox*  m_detailGroup      = nullptr;
     QLabel*     m_lblEmisor        = nullptr;
     QLabel*     m_lblVendedor      = nullptr;
+    QLabel*     m_lblFacturacion   = nullptr;
     QLabel*     m_lblFolio         = nullptr;
     QLabel*     m_lblTipo          = nullptr;
     QLabel*     m_lblRecepcion     = nullptr;
@@ -81,8 +83,7 @@ private:
     QLabel*     m_lblNotas         = nullptr;
 
     // Panel derecho — productos vinculados
-    QTableView*         m_productosView       = nullptr;
-    QStandardItemModel* m_productosModel      = nullptr;
+    QTableWidget*       m_productosTable      = nullptr;
     QPushButton*        m_btnAgregarProducto  = nullptr;
     QPushButton*        m_btnVerCorte         = nullptr;
 

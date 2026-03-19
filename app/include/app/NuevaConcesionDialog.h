@@ -4,6 +4,7 @@
 #include "core/ConcesionRepository.h"
 #include "core/EmisorRepository.h"
 
+class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QDateEdit;
@@ -29,11 +30,12 @@ public:
     [[nodiscard]] Calculadora::ConcesionRecord result() const;
 
     // Para crear un emisor nuevo cuando isNuevoEmisor() es true
-    [[nodiscard]] bool    isNuevoEmisor()      const;
-    [[nodiscard]] QString nuevoEmisorNombre()  const;
-    [[nodiscard]] QString nuevoEmisorVendedor() const;
-    [[nodiscard]] QString nuevoEmisorTelefono() const;
-    [[nodiscard]] QString nuevoEmisorEmail()   const;
+    [[nodiscard]] bool    isNuevoEmisor()        const;
+    [[nodiscard]] QString nuevoEmisorNombre()    const;
+    [[nodiscard]] QString nuevoEmisorVendedor()  const;
+    [[nodiscard]] QString nuevoEmisorTelefono()  const;
+    [[nodiscard]] QString nuevoEmisorEmail()     const;
+    [[nodiscard]] bool    nuevoEmisorFacturacion() const;
 
     // Archivos seleccionados para adjuntar (rutas absolutas)
     [[nodiscard]] QStringList adjuntosSeleccionados() const;
@@ -50,6 +52,7 @@ private:
     void setupUi();
     void loadEmisores();
     void populateFrom(const Calculadora::ConcesionRecord& record);
+    void updateTipoCombo(bool factura);  // Actualiza opciones de m_cmbTipo segun facturacion
 
     Calculadora::EmisorRepository& m_emisorRepo;
     bool    m_editMode = false;
@@ -62,6 +65,7 @@ private:
     QLineEdit*  m_txtNombreVendedor = nullptr;
     QLineEdit*  m_txtTelefono       = nullptr;
     QLineEdit*  m_txtEmail          = nullptr;
+    QCheckBox*  m_chkFacturacion    = nullptr;  // Solo visible en nuevo emisor
 
     // Concesion
     QComboBox*    m_cmbTipo       = nullptr;

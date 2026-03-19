@@ -3,6 +3,7 @@
 #include <optional>
 #include "core/PriceCalculator.h"
 #include "core/CalculationScenario.h"
+#include "core/ProductoRepository.h"
 
 class QDoubleSpinBox;
 class QSpinBox;
@@ -23,10 +24,21 @@ namespace App {
 class AgregarProductoDialog : public QDialog {
     Q_OBJECT
 public:
+    // Modo agregar
     explicit AgregarProductoDialog(int64_t concesionId,
                                    const QString& concesionLabel,
                                    Calculadora::PriceCalculator& calculator,
-                                   double comisionPct = 30.0,
+                                   double comisionPct   = 30.0,
+                                   bool   facturacion   = true,
+                                   QWidget* parent = nullptr);
+
+    // Modo editar — pre-rellena los datos del producto existente.
+    // El usuario debe recalcular antes de poder guardar.
+    explicit AgregarProductoDialog(const Calculadora::ProductoRecord& existing,
+                                   const QString& concesionLabel,
+                                   Calculadora::PriceCalculator& calculator,
+                                   double comisionPct,
+                                   bool   facturacion,
                                    QWidget* parent = nullptr);
 
     // Datos del producto a guardar (validos solo si exec() == Accepted)
@@ -36,6 +48,8 @@ public:
     [[nodiscard]] int64_t                             concesionId()    const;
     [[nodiscard]] int                                 cantidad()       const;
     [[nodiscard]] Calculadora::CalculationResult      calculationResult() const;
+    // Solo valido en modo edicion (segundo constructor)
+    [[nodiscard]] int64_t                             productoId()     const;
 
 private slots:
     void onCalcularClicked();
@@ -48,6 +62,7 @@ private:
     void displayResult(const Calculadora::CalculationResult& r);
 
     int64_t                      m_concesionId;
+    int64_t                      m_productoId  = 0;   // 0 = modo agregar
     double                       m_comisionPct;
     Calculadora::PriceCalculator& m_calculator;
     std::optional<Calculadora::CalculationResult> m_result;
@@ -69,6 +84,7 @@ private:
     QLabel*     m_lbIvaNetoPagar    = nullptr;
     QFrame*     m_desgloseFrame     = nullptr;
     QLabel*     m_lbDesglose        = nullptr;
+    QLabel*     m_lbIvaCallout      = nullptr;  // Resaltado visual del tipo de IVA
 
     // Datos del producto
     QRadioButton* m_radioPapeleria  = nullptr;

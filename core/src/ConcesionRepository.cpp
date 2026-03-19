@@ -31,9 +31,9 @@ ConcesionStatus ConcesionRecord::status() const {
 // ConcesionRepository
 // ---------------------------------------------------------------------------
 
-// Query base — incluye LEFT JOIN con emisores para llenar nombreEmisor/Vendedor
+// Query base — incluye LEFT JOIN con emisores para llenar nombreEmisor/Vendedor/Facturacion
 static const char* BASE_QUERY = R"(
-    SELECT c.*, e.nombre_emisor, e.nombre_vendedor
+    SELECT c.*, e.nombre_emisor, e.nombre_vendedor, e.facturacion AS emisor_facturacion
     FROM concesiones c
     LEFT JOIN emisores e ON c.emisor_id = e.id
 )";
@@ -53,6 +53,8 @@ ConcesionRecord ConcesionRepository::mapRow(const QSqlQuery& q) const {
                              ? q.value("emisor_nombre").toString()
                              : joinNombre;
     r.emisorNombreVendedor = q.value("nombre_vendedor").toString();
+    r.emisorFacturacion    = q.value("emisor_facturacion").isNull() ? true
+                             : q.value("emisor_facturacion").toInt() != 0;
     r.emisorContacto       = q.value("emisor_contacto").toString();
     r.folio                = q.value("folio").toString();
     r.fechaRecepcion       = q.value("fecha_recepcion").toString();
@@ -64,9 +66,10 @@ ConcesionRecord ConcesionRepository::mapRow(const QSqlQuery& q) const {
     r.createdAt            = q.value("created_at").toString();
 
     QString td = q.value("tipo_documento").toString();
-    r.tipoDocumento = (td == "Nota de credito")
-                      ? TipoDocumentoConcesion::NotaDeCredito
-                      : TipoDocumentoConcesion::Factura;
+    if      (td == "Nota de credito")  r.tipoDocumento = TipoDocumentoConcesion::NotaDeCredito;
+    else if (td == "Nota de remision") r.tipoDocumento = TipoDocumentoConcesion::NotaDeRemision;
+    else if (td == "Otro")             r.tipoDocumento = TipoDocumentoConcesion::Otro;
+    else                               r.tipoDocumento = TipoDocumentoConcesion::Factura;
     return r;
 }
 
@@ -216,6 +219,14 @@ bool ConcesionRepository::finalizar(int64_t id) {
         return false;
     }
     return q.numRowsAffected() > 0;
+}
+
+int ConcesionRepository::countActiveByEmisor(int64_t emisorId) const {
+    QSqlQuery q(m_db.database());
+    q.prepare("SELECT COUNT(*) FROM concesiones WHERE emisor_id = :eid AND activa = 1");
+    q.bindValue(":eid", QVariant::fromValue(static_cast<qlonglong>(emisorId)));
+    if (q.exec() && q.next()) return q.value(0).toInt();
+    return 0;
 }
 
 bool ConcesionRepository::remove(int64_t id) {

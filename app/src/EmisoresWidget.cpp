@@ -8,6 +8,7 @@
 #include <QDialog>
 #include <QFormLayout>
 #include <QLineEdit>
+#include <QCheckBox>
 #include <QLabel>
 #include <QDialogButtonBox>
 #include <QMessageBox>
@@ -15,7 +16,13 @@
 namespace App {
 
 // ---------------------------------------------------------------------------
-// Helper: diálogo simple para crear/editar un EmisorRecord
+// Columnas del modelo (la col 0 "ID" queda oculta)
+// ---------------------------------------------------------------------------
+enum Col { ColId = 0, ColNombre, ColVendedor, ColTel, ColEmail, ColFactura, ColConcesiones };
+static constexpr int kNumCols = 7;
+
+// ---------------------------------------------------------------------------
+// Helper: diálogo para crear/editar un EmisorRecord
 // ---------------------------------------------------------------------------
 static bool openEmisorDialog(Calculadora::EmisorRecord& rec, QWidget* parent) {
     QDialog dlg(parent);
@@ -29,11 +36,15 @@ static bool openEmisorDialog(Calculadora::EmisorRecord& rec, QWidget* parent) {
     auto* txtTel      = new QLineEdit(rec.telefono);
     auto* txtEmail    = new QLineEdit(rec.email);
     auto* txtNotas    = new QLineEdit(rec.notas);
-    form->addRow("Nombre *:",  txtNombre);
-    form->addRow("Vendedor:",  txtVendedor);
-    form->addRow("Telefono:",  txtTel);
-    form->addRow("Email:",     txtEmail);
-    form->addRow("Notas:",     txtNotas);
+    auto* chkFactura  = new QCheckBox("Emite facturas (CFDI)");
+    chkFactura->setChecked(rec.facturacion);
+
+    form->addRow("Nombre *:",    txtNombre);
+    form->addRow("Vendedor:",    txtVendedor);
+    form->addRow("Telefono:",    txtTel);
+    form->addRow("Email:",       txtEmail);
+    form->addRow("Notas:",       txtNotas);
+    form->addRow("Facturacion:", chkFactura);
 
     auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     QObject::connect(btns, &QDialogButtonBox::accepted, &dlg, [&]() {
@@ -57,6 +68,7 @@ static bool openEmisorDialog(Calculadora::EmisorRecord& rec, QWidget* parent) {
     rec.telefono       = txtTel->text().trimmed();
     rec.email          = txtEmail->text().trimmed();
     rec.notas          = txtNotas->text().trimmed();
+    rec.facturacion    = chkFactura->isChecked();
     return true;
 }
 
@@ -64,9 +76,12 @@ static bool openEmisorDialog(Calculadora::EmisorRecord& rec, QWidget* parent) {
 // EmisoresWidget
 // ---------------------------------------------------------------------------
 
-EmisoresWidget::EmisoresWidget(Calculadora::EmisorRepository& repo, QWidget* parent)
+EmisoresWidget::EmisoresWidget(Calculadora::EmisorRepository&   emisorRepo,
+                               Calculadora::ConcesionRepository& concesionRepo,
+                               QWidget* parent)
     : QWidget(parent)
-    , m_repo(repo)
+    , m_repo(emisorRepo)
+    , m_concesionRepo(concesionRepo)
 {
     setupUi();
     setupConnections();
@@ -78,13 +93,20 @@ void EmisoresWidget::setupUi() {
     layout->setContentsMargins(12, 10, 12, 12);
     layout->setSpacing(8);
 
-    m_model = new QStandardItemModel(0, 5, this);
-    m_model->setHorizontalHeaderLabels({"ID", "Distribuidor", "Vendedor", "Telefono", "Email"});
+    m_model = new QStandardItemModel(0, kNumCols, this);
+    m_model->setHorizontalHeaderLabels(
+        {"ID", "Distribuidor", "Vendedor", "Telefono", "Email", "Factura", "Concesiones activas"});
 
     m_tableView = new QTableView();
     m_tableView->setModel(m_model);
-    m_tableView->setColumnHidden(0, true);           // ocultar columna ID
-    m_tableView->horizontalHeader()->setStretchLastSection(true);
+    m_tableView->setColumnHidden(ColId, true);
+    m_tableView->horizontalHeader()->setStretchLastSection(false);
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColNombre,    QHeaderView::Stretch);
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColVendedor,  QHeaderView::ResizeToContents);
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColTel,       QHeaderView::ResizeToContents);
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColEmail,     QHeaderView::ResizeToContents);
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColFactura,   QHeaderView::ResizeToContents);
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColConcesiones, QHeaderView::ResizeToContents);
     m_tableView->horizontalHeader()->setHighlightSections(false);
     m_tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_tableView->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -95,7 +117,7 @@ void EmisoresWidget::setupUi() {
     m_tableView->verticalHeader()->setVisible(false);
     layout->addWidget(m_tableView);
 
-    auto* btnRow    = new QHBoxLayout();
+    auto* btnRow  = new QHBoxLayout();
     m_btnNuevo    = new QPushButton("Nuevo");
     m_btnEditar   = new QPushButton("Editar");
     m_btnEliminar = new QPushButton("Eliminar");
@@ -125,17 +147,43 @@ void EmisoresWidget::refresh() {
     m_model->removeRows(0, m_model->rowCount());
     const auto emisores = m_repo.findAll();
     for (const auto& e : emisores) {
+        // --- Columna Factura ---
+        auto* itemFactura = new QStandardItem(e.facturacion ? "✓  Factura" : "✗  No factura");
+        itemFactura->setForeground(QColor(e.facturacion ? "#43A047" : "#E65100"));
+        itemFactura->setTextAlignment(Qt::AlignCenter);
+        itemFactura->setEditable(false);
+
+        // --- Columna Concesiones activas: puntos de color ---
+        int activas = m_concesionRepo.countActiveByEmisor(e.id);
+        QString dotsText;
+        if (activas == 0) {
+            dotsText = "—";
+        } else {
+            int dots = qMin(activas, 5);
+            for (int d = 0; d < dots; ++d) dotsText += "●";
+            if (activas > 5) dotsText += QString("  +%1").arg(activas - 5);
+        }
+        auto* itemConcesiones = new QStandardItem(dotsText);
+        itemConcesiones->setForeground(activas > 0 ? QColor("#43A047") : QColor("#8C8C8C"));
+        itemConcesiones->setTextAlignment(Qt::AlignCenter);
+        itemConcesiones->setToolTip(QString("%1 concesion%2 activa%3")
+            .arg(activas).arg(activas != 1 ? "es" : "").arg(activas != 1 ? "s" : ""));
+        itemConcesiones->setEditable(false);
+
         QList<QStandardItem*> row;
         row << new QStandardItem(QString::number(e.id))
             << new QStandardItem(e.nombreEmisor)
             << new QStandardItem(e.nombreVendedor)
             << new QStandardItem(e.telefono)
-            << new QStandardItem(e.email);
-        for (auto* item : row) item->setEditable(false);
+            << new QStandardItem(e.email)
+            << itemFactura
+            << itemConcesiones;
+        for (int i = 0; i < ColFactura; ++i) row[i]->setEditable(false);
         m_model->appendRow(row);
     }
     m_tableView->resizeColumnsToContents();
-    m_tableView->horizontalHeader()->setStretchLastSection(true);
+    // Nombre sigue siendo la columna elástica
+    m_tableView->horizontalHeader()->setSectionResizeMode(ColNombre, QHeaderView::Stretch);
 }
 
 void EmisoresWidget::onNuevoClicked() {
@@ -151,7 +199,7 @@ void EmisoresWidget::onNuevoClicked() {
 void EmisoresWidget::onEditarClicked() {
     int row = m_tableView->currentIndex().row();
     if (row < 0) return;
-    int64_t id = m_model->item(row, 0)->text().toLongLong();
+    int64_t id = m_model->item(row, ColId)->text().toLongLong();
     Calculadora::EmisorRecord rec = m_repo.findById(id);
     if (!openEmisorDialog(rec, this)) return;
     if (!m_repo.update(rec)) {
@@ -164,11 +212,11 @@ void EmisoresWidget::onEditarClicked() {
 void EmisoresWidget::onEliminarClicked() {
     int row = m_tableView->currentIndex().row();
     if (row < 0) return;
-    QString nombre = m_model->item(row, 1)->text();
-    int64_t id     = m_model->item(row, 0)->text().toLongLong();
+    QString nombre = m_model->item(row, ColNombre)->text();
+    int64_t id     = m_model->item(row, ColId)->text().toLongLong();
 
     auto resp = QMessageBox::question(this, "Confirmar eliminacion",
-        QString("¿Eliminar el distribuidor \"%1\"?\n"
+        QString("Eliminar el distribuidor \"%1\"?\n"
                 "Las concesiones vinculadas quedaran sin distribuidor asignado.").arg(nombre));
     if (resp != QMessageBox::Yes) return;
 

@@ -30,25 +30,24 @@ TEST_F(PriceCalculatorTest, ProductoPropio_PrecioInvalido) {
 }
 
 // ---- Escenario 2a: Concesion con CFDI ----
-// Modelo markup: comision 30% sobre precio neto del proveedor.
+// Modelo margen: costo = 54% del precio final (igual que ProductoPropio).
 // Proveedor neto $54:
-//   precioSinIVA   = $54 * 1.30 = $70.20
-//   precioFinal    = $70.20 * 1.16 = $81.432
-//   comision       = $54 * 0.30 = $16.20
-//   ivaTrasladado  = $70.20 * 0.16 = $11.232
-//   ivaAcreditable = $54 * 0.16 = $8.64
-//   ivaNetoPagar   = $11.232 - $8.64 = $2.592
+//   precioFinal    = $54 / 0.54 = $100.00
+//   comision       = $100 * 0.30 = $30.00
+//   ivaTrasladado  = $100 * 0.16 = $16.00
+//   ivaAcreditable = $54 * 0.16  = $8.64  (IVA pagado al proveedor, recuperable)
+//   ivaNetoPagar   = $16.00 - $8.64 = $7.36
 
 TEST_F(PriceCalculatorTest, ConcesionConCFDI_BasicoNeto54) {
     auto r = calc.calcularConcesionConCFDI(54.0);
     EXPECT_TRUE(r.isValid);
-    EXPECT_NEAR(r.precioFinal,    81.432, EPS);
-    EXPECT_NEAR(r.costo,          54.0,   EPS);
-    EXPECT_NEAR(r.comision,       16.20,  EPS);
-    EXPECT_NEAR(r.ivaTrasladado,  11.232, EPS);
-    EXPECT_NEAR(r.ivaAcreditable,  8.64,  EPS);
-    EXPECT_NEAR(r.ivaNetoPagar,    2.592, EPS);
-    EXPECT_NEAR(r.ivaAbsorbido,    0.0,   EPS);
+    EXPECT_NEAR(r.precioFinal,   100.0,  EPS);
+    EXPECT_NEAR(r.costo,          54.0,  EPS);
+    EXPECT_NEAR(r.comision,       30.0,  EPS);
+    EXPECT_NEAR(r.ivaTrasladado,  16.0,  EPS);
+    EXPECT_NEAR(r.ivaAcreditable,  8.64, EPS);
+    EXPECT_NEAR(r.ivaNetoPagar,    7.36, EPS);
+    EXPECT_NEAR(r.ivaAbsorbido,    0.0,  EPS);
     EXPECT_EQ(r.escenario, Escenario::Concesion);
     EXPECT_TRUE(r.tieneCFDI);
 }
@@ -58,25 +57,25 @@ TEST_F(PriceCalculatorTest, ConcesionConCFDI_Invalido) {
 }
 
 // ---- Escenario 2b: Concesion sin CFDI ----
-// Mismo precioFinal que Con CFDI. La libreria absorbe el IVA pagado al proveedor.
+// Modelo margen: el IVA pagado al proveedor se absorbe como costo antes de calcular.
 // Proveedor neto $54:
-//   precioFinal   = $81.432  (igual que Con CFDI)
-//   costo         = $54.00   (precio neto del proveedor)
-//   comision      = $16.20   (30% sobre costo, misma comision nominal)
-//   ivaTrasladado = $11.232
-//   ivaAbsorbido  = $54 * 0.16 = $8.64  (IVA pagado sin CFDI, no acreditable)
-//   ivaNetoPagar  = $11.232  (todo se entera a SAT)
+//   costoEfectivo = $54 * 1.16 = $62.64  (IVA absorbido: $8.64)
+//   precioFinal   = $62.64 / 0.54 = $116.00
+//   comision      = $116 * 0.30  = $34.80
+//   ivaTrasladado = $116 * 0.16  = $18.56  (todo se entera a SAT)
+//   ivaAcreditable = $0
+//   ivaNetoPagar  = $18.56
 
 TEST_F(PriceCalculatorTest, ConcesionSinCFDI_BasicoNeto54) {
     auto r = calc.calcularConcesionSinCFDI(54.0);
     EXPECT_TRUE(r.isValid);
-    EXPECT_NEAR(r.precioFinal,    81.432, EPS);  // igual que Con CFDI
-    EXPECT_NEAR(r.costo,          54.0,   EPS);
-    EXPECT_NEAR(r.comision,       16.20,  EPS);
-    EXPECT_NEAR(r.ivaTrasladado,  11.232, EPS);
-    EXPECT_NEAR(r.ivaAcreditable,  0.0,   EPS);
-    EXPECT_NEAR(r.ivaNetoPagar,   11.232, EPS);
-    EXPECT_NEAR(r.ivaAbsorbido,    8.64,  EPS);
+    EXPECT_NEAR(r.precioFinal,   116.0,  EPS);
+    EXPECT_NEAR(r.costo,          54.0,  EPS);
+    EXPECT_NEAR(r.comision,       34.80, EPS);
+    EXPECT_NEAR(r.ivaTrasladado,  18.56, EPS);
+    EXPECT_NEAR(r.ivaAcreditable,  0.0,  EPS);
+    EXPECT_NEAR(r.ivaNetoPagar,   18.56, EPS);
+    EXPECT_NEAR(r.ivaAbsorbido,    8.64, EPS);
     EXPECT_EQ(r.escenario, Escenario::Concesion);
     EXPECT_FALSE(r.tieneCFDI);
 }
@@ -105,14 +104,16 @@ TEST_F(PriceCalculatorTest, ProductoPropio_ConCFDI_Precio100) {
     EXPECT_TRUE(r.tieneCFDI);
 }
 
-// El IVA Acreditable es identico entre Producto Propio Con CFDI y Concesion Con CFDI
-// cuando el costo implicito (54% del precio final) == precio neto del proveedor ($54).
-// Nota: ivaNetoPagar ya NO es simetrico porque los modelos de precio son distintos
-// (margen para Propio vs markup para Concesion).
+// Ambos escenarios usan el mismo modelo de margen (costo = 54% del precioFinal).
+// Con precioFinal=$100 (Propio) y precioNeto=$54 (Concesion), todos los campos son identicos.
 TEST_F(PriceCalculatorTest, ProductoPropio_ConCFDI_SimetriaConConcesion) {
     auto propio    = calc.calcularProductoPropio(100.0, true);
     auto concesion = calc.calcularConcesionConCFDI(54.0);
-    EXPECT_NEAR(propio.ivaAcreditable, concesion.ivaAcreditable, EPS);  // $8.64 en ambos
+    EXPECT_NEAR(propio.precioFinal,    concesion.precioFinal,    EPS);  // $100
+    EXPECT_NEAR(propio.comision,       concesion.comision,       EPS);  // $30
+    EXPECT_NEAR(propio.ivaTrasladado,  concesion.ivaTrasladado,  EPS);  // $16
+    EXPECT_NEAR(propio.ivaAcreditable, concesion.ivaAcreditable, EPS);  // $8.64
+    EXPECT_NEAR(propio.ivaNetoPagar,   concesion.ivaNetoPagar,   EPS);  // $7.36
 }
 
 // Sin CFDI el comportamiento es igual que antes (retrocompatibilidad)

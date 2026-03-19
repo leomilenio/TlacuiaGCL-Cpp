@@ -82,6 +82,20 @@ void CalculatorWidget::setupUi() {
     cfdiLay->addWidget(m_radioSinCFDI);
     cfdiLay->addWidget(m_ivaInfoLabel);
 
+    // --- Tipo de articulo (solo visible en Concesion) ---
+    m_tipoGroup = new QGroupBox("Tipo de articulo");
+    auto* tipoLay = new QHBoxLayout(m_tipoGroup);
+    m_radioPapeleria = new QRadioButton("Papeleria  (IVA 16%)");
+    m_radioLibro     = new QRadioButton("Libro  (Tasa 0% — LIVA Art. 2-A fr. IV)");
+    m_radioPapeleria->setChecked(true);
+    m_tipoBtnGrp = new QButtonGroup(this);
+    m_tipoBtnGrp->addButton(m_radioPapeleria, 0);
+    m_tipoBtnGrp->addButton(m_radioLibro,     1);
+    tipoLay->addWidget(m_radioPapeleria);
+    tipoLay->addWidget(m_radioLibro);
+    tipoLay->addStretch();
+    m_tipoGroup->setVisible(false);  // se muestra solo cuando Concesion esta seleccionada
+
     // --- Input de precio ---
     auto* inputGroup  = new QGroupBox("Precio de entrada");
     auto* inputLayout = new QFormLayout(inputGroup);
@@ -166,6 +180,13 @@ void CalculatorWidget::setupUi() {
     auto* resSep2 = new QFrame(); resSep2->setFrameShape(QFrame::HLine);
     resLayout->addWidget(resSep2);
 
+    // Callout visual — tipo de IVA aplicado
+    m_lbIvaCallout = new QLabel();
+    m_lbIvaCallout->setWordWrap(true);
+    m_lbIvaCallout->setTextFormat(Qt::RichText);
+    m_lbIvaCallout->setVisible(false);
+    resLayout->addWidget(m_lbIvaCallout);
+
     // Seccion IVA
     auto* ivaForm = new QFormLayout();
     ivaForm->setLabelAlignment(Qt::AlignLeft);
@@ -181,6 +202,7 @@ void CalculatorWidget::setupUi() {
 
     mainLayout->addWidget(m_escenarioGroup);
     mainLayout->addWidget(m_cfdiGroup);
+    mainLayout->addWidget(m_tipoGroup);
     mainLayout->addWidget(inputGroup);
     mainLayout->addLayout(btnLayout);
     mainLayout->addWidget(m_resultsGroup);
@@ -190,9 +212,11 @@ void CalculatorWidget::setupUi() {
 void CalculatorWidget::setupConnections() {
     connect(m_escenarioBtnGrp, &QButtonGroup::idToggled,
             this, [this](int, bool) { onEscenarioChanged(); });
-    // Limpiar resultado si cambia el tipo de CFDI (el calculo previo ya no aplica)
+    // Limpiar resultado si cambia el tipo de CFDI o tipo de articulo
     connect(m_radioConCFDI, &QRadioButton::toggled,
             this, [this]() { onEscenarioChanged(); });
+    connect(m_tipoBtnGrp, &QButtonGroup::idToggled,
+            this, [this](int, bool) { onEscenarioChanged(); });
     connect(m_calcBtn,  &QPushButton::clicked, this, &CalculatorWidget::onCalculateClicked);
     connect(m_saveBtn,  &QPushButton::clicked, this, &CalculatorWidget::onSaveClicked);
     connect(m_clearBtn, &QPushButton::clicked, this, &CalculatorWidget::onClearClicked);
@@ -200,20 +224,28 @@ void CalculatorWidget::setupConnections() {
 
 void CalculatorWidget::onEscenarioChanged() {
     bool isConcesion = m_radioConcesion->isChecked();
+    bool esLibro     = isConcesion && m_radioLibro->isChecked();
+
+    m_tipoGroup->setVisible(isConcesion);
 
     if (isConcesion) {
         m_inputLabel->setText("Precio neto del proveedor sin IVA ($):");
-        // En concesion sin CFDI el IVA se suma al costo efectivo antes de calcular.
-        // En concesion con CFDI el precio neto ES el 54% y el IVA es acreditable.
-        m_ivaInfoLabel->setText(
-            "Con CFDI: precioFinal = precioNeto / 0.54  |  "
-            "IVA Acreditable = precioNeto x 16%\n"
-            "Sin CFDI: costoEfectivo = precioNeto x 1.16  |  "
-            "precioFinal = costoEfectivo / 0.54  |  IVA Acreditable = $0");
+        if (esLibro) {
+            m_ivaInfoLabel->setText(
+                "Libro (Tasa 0%, LIVA Art. 2-A fr. IV):\n"
+                "  precioFinal = precioNeto x (1 + comision%)  — sin IVA al cliente\n"
+                "  Con CFDI: IVA pagado al proveedor (16%) genera saldo a favor\n"
+                "  Sin CFDI: IVA pagado al proveedor se absorbe como costo");
+        } else {
+            m_ivaInfoLabel->setText(
+                "Papeleria (IVA 16%):\n"
+                "  Con CFDI: precioFinal = precioNeto x 1.30 x 1.16  |  "
+                "IVA Acreditable = precioNeto x 16%\n"
+                "  Sin CFDI: precioFinal = precioNeto x 1.30 x 1.16  |  "
+                "IVA Acreditable = $0  (IVA absorbido como costo)");
+        }
     } else {
         m_inputLabel->setText("Precio final de venta ($):");
-        // En producto propio el usuario fija el precio; el IVA Acreditable depende
-        // de si tuvo CFDI de compra. Se estima como: costo_implicito (54%) x 16%.
         m_ivaInfoLabel->setText(
             "Con CFDI de compra: IVA Acreditable = costo implicito (54%) x 16%\n"
             "Sin CFDI de compra: IVA Acreditable = $0  (todo el IVA se entera a SAT)\n"
@@ -228,10 +260,13 @@ void CalculatorWidget::onCalculateClicked() {
 
     if (m_radioPropio->isChecked()) {
         result = m_calculator.calcularProductoPropio(inputVal, m_radioConCFDI->isChecked());
-    } else if (m_radioConCFDI->isChecked()) {
-        result = m_calculator.calcularConcesionConCFDI(inputVal);
     } else {
-        result = m_calculator.calcularConcesionSinCFDI(inputVal);
+        auto tipo = m_radioLibro->isChecked() ? Calculadora::TipoProducto::Libro
+                                              : Calculadora::TipoProducto::Papeleria;
+        if (m_radioConCFDI->isChecked())
+            result = m_calculator.calcularConcesionConCFDI(inputVal, 30.0, tipo);
+        else
+            result = m_calculator.calcularConcesionSinCFDI(inputVal, 30.0, tipo);
     }
 
     if (!result.isValid) {
@@ -293,6 +328,8 @@ void CalculatorWidget::displayResult(const Calculadora::CalculationResult& r) {
     QLocale loc;
     auto fmt = [&](double v) { return loc.toCurrencyString(v); };
 
+    const bool esLibro = (r.tipoProducto == Calculadora::TipoProducto::Libro);
+
     // Labels dinamicos segun escenario
     if (r.escenario == Calculadora::Escenario::Concesion) {
         m_labelCosto->setText("Costo del proveedor:");
@@ -305,28 +342,70 @@ void CalculatorWidget::displayResult(const Calculadora::CalculationResult& r) {
     m_lbPrecioFinal->setText(fmt(r.precioFinal));
     m_lbCosto->setText(fmt(r.costo));
     m_lbComision->setText(fmt(r.comision));
-    m_lbIvaTrasladado->setText(fmt(r.ivaTrasladado));
-    m_lbIvaAcreditable->setText(r.tieneCFDI ? fmt(r.ivaAcreditable) : "$0.00  (sin CFDI — no acreditable)");
-    m_lbIvaNetoPagar->setText(fmt(r.ivaNetoPagar));
 
-    // Callout de pasos — solo para Concesion Sin CFDI
-    const bool esConcesionSinCFDI =
-        r.escenario == Calculadora::Escenario::Concesion && !r.tieneCFDI;
-    if (esConcesionSinCFDI) {
-        // r.costo == precioNeto (modelo markup); r.ivaAbsorbido = precioNeto * 0.16
-        const double costoReal = r.costo + r.ivaAbsorbido;
-        m_lbDesgloseSinCFDI->setText(
-            QString("<b>Como el IVA no es acreditable, la libreria lo absorbe:</b><br>"
-                    "<tt>&nbsp;&nbsp;Paso 1 &mdash; IVA absorbido:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-                        "%1 &times; 0.16 = %2&nbsp;&nbsp;(costo real: %3)</tt><br>"
-                    "<tt>&nbsp;&nbsp;Paso 2 &mdash; Precio de venta:&nbsp;&nbsp;&nbsp;&nbsp;"
-                        "%1 &times; 1.30 = %4&nbsp;&nbsp;(con comision)</tt><br>"
-                    "<tt>&nbsp;&nbsp;Paso 3 &mdash; Precio final al cliente: "
-                        "%4 &times; 1.16 = %5</tt>")
-                .arg(fmt(r.costo), fmt(r.ivaAbsorbido), fmt(costoReal),
-                     fmt(r.costo + r.comision), fmt(r.precioFinal)));
+    if (esLibro) {
+        m_lbIvaTrasladado->setText("$0.00  (Tasa 0% — Art. 2-A LIVA)");
+        if (r.tieneCFDI)
+            m_lbIvaAcreditable->setText(fmt(r.ivaAcreditable) + "  (saldo a favor)");
+        else
+            m_lbIvaAcreditable->setText("$0.00  (sin CFDI — no acreditable)");
+        m_lbIvaNetoPagar->setText(r.tieneCFDI
+            ? fmt(r.ivaNetoPagar) + "  (saldo a favor)"
+            : "$0.00");
+    } else {
+        m_lbIvaTrasladado->setText(fmt(r.ivaTrasladado));
+        m_lbIvaAcreditable->setText(r.tieneCFDI ? fmt(r.ivaAcreditable)
+                                                 : "$0.00  (sin CFDI — no acreditable)");
+        m_lbIvaNetoPagar->setText(fmt(r.ivaNetoPagar));
     }
-    m_desgloseFrame->setVisible(esConcesionSinCFDI);
+
+    // Callout visual — tipo de IVA aplicado
+    if (esLibro) {
+        const QString detalle = r.tieneCFDI
+            ? "IVA pagado al proveedor (16%) genera <b>saldo a favor</b> de la libreria."
+            : "Sin CFDI: IVA pagado al proveedor se absorbe como costo (no recuperable).";
+        m_lbIvaCallout->setText(
+            QString("<div style='background:#E8F5E9;border-left:3px solid #4CAF50;"
+                    "padding:6px 8px;'>"
+                    "<b style='color:#1B5E20;'>&#10003; Tasa 0% — Libro (LIVA Art. 2-A fr. IV)</b><br>"
+                    "<span style='color:#388E3C;font-size:11px;'>"
+                    "No se cobra IVA al cliente. %1</span></div>").arg(detalle));
+        m_lbIvaCallout->setVisible(true);
+    } else if (r.escenario == Calculadora::Escenario::Concesion) {
+        m_lbIvaCallout->setText(
+            QString("<div style='background:#FFF8E1;border-left:3px solid #FF9800;"
+                    "padding:6px 8px;'>"
+                    "<b style='color:#E65100;'>IVA 16% incluido en precio al cliente: %1</b>"
+                    "</div>").arg(fmt(r.ivaTrasladado)));
+        m_lbIvaCallout->setVisible(true);
+    } else {
+        m_lbIvaCallout->setVisible(false);
+    }
+
+    // Callout de pasos — solo para Concesion Papeleria Sin CFDI
+    const bool esConcesionPapeleriaSinCFDI =
+        r.escenario == Calculadora::Escenario::Concesion && !r.tieneCFDI && !esLibro;
+    if (esConcesionPapeleriaSinCFDI) {
+        const double costoEfectivo = r.costo + r.ivaAbsorbido;
+        m_lbDesgloseSinCFDI->setText(
+            QString("<b>Como el IVA no es acreditable, la libreria lo absorbe como costo:</b><br>"
+                    "<tt>&nbsp;&nbsp;Paso 1 &mdash; Costo efectivo:&nbsp;&nbsp;&nbsp;"
+                        "%1 &times; 1.16 = %2&nbsp;&nbsp;(IVA absorbido: %3)</tt><br>"
+                    "<tt>&nbsp;&nbsp;Paso 2 &mdash; Precio final al cliente: "
+                        "%2 / 0.54 = %4</tt><br>"
+                    "<tt>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+                        "Comision: %5&nbsp;&nbsp;IVA Trasladado: %6</tt>")
+                .arg(fmt(r.costo), fmt(costoEfectivo), fmt(r.ivaAbsorbido),
+                     fmt(r.precioFinal), fmt(r.comision), fmt(r.ivaTrasladado)));
+    } else if (!r.tieneCFDI && esLibro && r.ivaAbsorbido > 0.0) {
+        m_lbDesgloseSinCFDI->setText(
+            QString("<b>Libro sin CFDI — IVA pagado al proveedor no recuperable:</b><br>"
+                    "<tt>&nbsp;&nbsp;IVA absorbido = %1 &times; 0.16 = %2&nbsp;&nbsp;"
+                    "(reduce el margen efectivo)</tt>")
+                .arg(fmt(r.costo), fmt(r.ivaAbsorbido)));
+    }
+    m_desgloseFrame->setVisible(
+        r.escenario == Calculadora::Escenario::Concesion && !r.tieneCFDI);
 }
 
 void CalculatorWidget::clearResults() {
@@ -335,6 +414,7 @@ void CalculatorWidget::clearResults() {
     m_labelComision->setText("Comision (30%):");
     m_lbPrecioFinal->setText(dash);
     m_desgloseFrame->setVisible(false);
+    m_lbIvaCallout->setVisible(false);
     m_lbCosto->setText(dash);
     m_lbComision->setText(dash);
     m_lbIvaTrasladado->setText(dash);

@@ -18,6 +18,8 @@ EmisorRecord EmisorRepository::mapRow(const QSqlQuery& q) const {
     r.telefono       = q.value("telefono").toString();
     r.email          = q.value("email").toString();
     r.notas          = q.value("notas").toString();
+    r.facturacion    = q.value("facturacion").isNull() ? true
+                       : q.value("facturacion").toInt() != 0;
     r.createdAt      = q.value("created_at").toString();
     return r;
 }
@@ -45,17 +47,18 @@ EmisorRecord EmisorRepository::findById(int64_t id) const {
 int64_t EmisorRepository::save(const EmisorRecord& r) {
     QSqlQuery q(m_db.database());
     q.prepare(R"(
-        INSERT INTO emisores (nombre_emisor, nombre_vendedor, telefono, email, notas)
-        VALUES (:nombre, :vendedor, :tel, :email, :notas)
+        INSERT INTO emisores (nombre_emisor, nombre_vendedor, telefono, email, notas, facturacion)
+        VALUES (:nombre, :vendedor, :tel, :email, :notas, :facturacion)
     )");
     auto optStr = [](const QString& s) -> QVariant {
         return s.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(s);
     };
-    q.bindValue(":nombre",   r.nombreEmisor);
-    q.bindValue(":vendedor", r.nombreVendedor);
-    q.bindValue(":tel",      optStr(r.telefono));
-    q.bindValue(":email",    optStr(r.email));
-    q.bindValue(":notas",    optStr(r.notas));
+    q.bindValue(":nombre",      r.nombreEmisor);
+    q.bindValue(":vendedor",    r.nombreVendedor);
+    q.bindValue(":tel",         optStr(r.telefono));
+    q.bindValue(":email",       optStr(r.email));
+    q.bindValue(":notas",       optStr(r.notas));
+    q.bindValue(":facturacion", r.facturacion ? 1 : 0);
     if (!q.exec()) {
         qCritical() << "EmisorRepo::save:" << q.lastError().text();
         return -1;
@@ -67,18 +70,19 @@ bool EmisorRepository::update(const EmisorRecord& r) {
     QSqlQuery q(m_db.database());
     q.prepare(R"(
         UPDATE emisores SET nombre_emisor=:nombre, nombre_vendedor=:vendedor,
-            telefono=:tel, email=:email, notas=:notas
+            telefono=:tel, email=:email, notas=:notas, facturacion=:facturacion
         WHERE id=:id
     )");
     auto optStr = [](const QString& s) -> QVariant {
         return s.isEmpty() ? QVariant(QMetaType(QMetaType::QString)) : QVariant(s);
     };
-    q.bindValue(":nombre",   r.nombreEmisor);
-    q.bindValue(":vendedor", r.nombreVendedor);
-    q.bindValue(":tel",      optStr(r.telefono));
-    q.bindValue(":email",    optStr(r.email));
-    q.bindValue(":notas",    optStr(r.notas));
-    q.bindValue(":id",       QVariant::fromValue(static_cast<qlonglong>(r.id)));
+    q.bindValue(":nombre",      r.nombreEmisor);
+    q.bindValue(":vendedor",    r.nombreVendedor);
+    q.bindValue(":tel",         optStr(r.telefono));
+    q.bindValue(":email",       optStr(r.email));
+    q.bindValue(":notas",       optStr(r.notas));
+    q.bindValue(":facturacion", r.facturacion ? 1 : 0);
+    q.bindValue(":id",          QVariant::fromValue(static_cast<qlonglong>(r.id)));
     if (!q.exec()) {
         qCritical() << "EmisorRepo::update:" << q.lastError().text();
         return false;

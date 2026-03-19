@@ -18,6 +18,10 @@ DatabaseManager::~DatabaseManager() {
     if (m_db.isOpen()) {
         m_db.close();
     }
+    // Liberar la referencia al objeto QSqlDatabase ANTES de removeDatabase,
+    // de lo contrario Qt emite "connection still in use" porque m_db
+    // sigue vivo mientras se remueve la conexion del registro global.
+    m_db = QSqlDatabase();
     QSqlDatabase::removeDatabase(m_connectionName);
 }
 
@@ -94,6 +98,11 @@ bool DatabaseManager::runMigrations() {
     if (current < 6) {
         if (!migrateV5toV6()) return false;
         setSchemaVersion(6);
+        current = 6;
+    }
+    if (current < 7) {
+        if (!migrateV6toV7()) return false;
+        setSchemaVersion(7);
     }
     return true;
 }
@@ -380,6 +389,77 @@ bool DatabaseManager::migrateV5toV6() {
     )");
 
     qDebug() << "Migracion V5->V6 completada (comision_pct, documentos_concesion).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V6 -> V7: facturacion en emisores + tipo_documento ampliado en concesiones
+//
+// Requiere recrear concesiones para actualizar el CHECK constraint.
+// Se usa PRAGMA foreign_keys=OFF para permitir DROP TABLE con FK activas.
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV6toV7() {
+    QSqlQuery q(m_db);
+
+    // 1. Agregar columna facturacion a emisores (1=factura, 0=no factura)
+    if (!q.exec("ALTER TABLE emisores ADD COLUMN facturacion INTEGER NOT NULL DEFAULT 1")) {
+        if (!q.lastError().text().contains("duplicate column name")) {
+            qCritical() << "migrateV6toV7 add facturacion:" << q.lastError().text();
+            return false;
+        }
+    }
+
+    // 2. Recrear concesiones con CHECK constraint ampliado para tipo_documento
+    q.exec("PRAGMA foreign_keys = OFF");
+
+    if (!q.exec(R"(
+        CREATE TABLE IF NOT EXISTS concesiones_v7 (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            emisor_id          INTEGER REFERENCES emisores(id) ON DELETE SET NULL,
+            emisor_nombre      TEXT    NOT NULL,
+            emisor_contacto    TEXT,
+            folio              TEXT,
+            fecha_recepcion    TEXT,
+            fecha_vencimiento  TEXT,
+            tipo_documento     TEXT    NOT NULL DEFAULT 'Factura'
+                               CHECK(tipo_documento IN
+                                   ('Factura','Nota de credito',
+                                    'Nota de remision','Otro')),
+            notas              TEXT,
+            activa             INTEGER NOT NULL DEFAULT 1,
+            comision_pct       REAL    NOT NULL DEFAULT 30.0,
+            created_at         TEXT    DEFAULT (datetime('now','localtime'))
+        )
+    )")) {
+        qCritical() << "migrateV6toV7 crear concesiones_v7:" << q.lastError().text();
+        q.exec("PRAGMA foreign_keys = ON");
+        return false;
+    }
+
+    if (!q.exec("INSERT INTO concesiones_v7 SELECT * FROM concesiones")) {
+        qCritical() << "migrateV6toV7 copiar concesiones:" << q.lastError().text();
+        q.exec("PRAGMA foreign_keys = ON");
+        return false;
+    }
+
+    if (!q.exec("DROP TABLE concesiones")) {
+        qCritical() << "migrateV6toV7 drop concesiones:" << q.lastError().text();
+        q.exec("PRAGMA foreign_keys = ON");
+        return false;
+    }
+
+    if (!q.exec("ALTER TABLE concesiones_v7 RENAME TO concesiones")) {
+        qCritical() << "migrateV6toV7 rename concesiones:" << q.lastError().text();
+        q.exec("PRAGMA foreign_keys = ON");
+        return false;
+    }
+
+    q.exec("CREATE INDEX IF NOT EXISTS idx_concesiones_emisor ON concesiones(emisor_id)");
+    q.exec("CREATE INDEX IF NOT EXISTS idx_concesiones_vencimiento ON concesiones(fecha_vencimiento ASC)");
+
+    q.exec("PRAGMA foreign_keys = ON");
+
+    qDebug() << "Migracion V6->V7 completada (facturacion, tipo_documento ampliado).";
     return true;
 }
 

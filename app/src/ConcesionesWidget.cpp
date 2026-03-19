@@ -8,9 +8,8 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QGroupBox>
-#include <QTableView>
 #include <QTableWidget>
-#include <QStandardItemModel>
+#include <QStyle>
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -104,7 +103,7 @@ void ConcesionesWidget::setupUi() {
     auto* lblTitle  = new QLabel("<b>Concesiones</b>");
     lblTitle->setStyleSheet("font-size: 14px;");
     m_lblFecha = new QLabel(QDate::currentDate().toString("dd/MM/yyyy"));
-    m_lblFecha->setStyleSheet("color: palette(mid); font-size: 12px;");
+    m_lblFecha->setStyleSheet("color: #8C8C8C; font-size: 12px;");
 
     m_btnVerAlertas = new QPushButton("Ver Alertas");
     m_btnVerAlertas->setObjectName("alertButton");
@@ -167,7 +166,7 @@ void ConcesionesWidget::setupUi() {
     grpLayout->setContentsMargins(0, 6, 0, 0);
     grpLayout->setSpacing(0);
 
-    auto* detailTable = new QTableWidget(10, 2, m_detailGroup);
+    auto* detailTable = new QTableWidget(11, 2, m_detailGroup);
     detailTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     detailTable->setSelectionMode(QAbstractItemView::NoSelection);
     detailTable->setFocusPolicy(Qt::NoFocus);
@@ -181,39 +180,51 @@ void ConcesionesWidget::setupUi() {
     detailTable->setColumnWidth(0, 115);
 
     const QStringList rowLabels = {
-        "Distribuidor", "Vendedor", "Folio", "Tipo",
+        "Distribuidor", "Vendedor", "Facturacion", "Folio", "Tipo",
         "Recepcion", "Vencimiento", "Estado", "Tiempo", "Comision", "Notas"
     };
 
-    m_lblEmisor      = new QLabel("-");
-    m_lblVendedor    = new QLabel("-");
-    m_lblFolio       = new QLabel("-");
-    m_lblTipo        = new QLabel("-");
-    m_lblRecepcion   = new QLabel("-");
-    m_lblVencimiento = new QLabel("-");
-    m_lblStatus      = new QLabel("-");
-    m_lblDias        = new QLabel("-");
-    m_lblComision    = new QLabel("-");
-    m_lblNotas       = new QLabel("-");
+    m_lblEmisor        = new QLabel("-");
+    m_lblVendedor      = new QLabel("-");
+    m_lblFacturacion   = new QLabel("-");
+    m_lblFolio         = new QLabel("-");
+    m_lblTipo          = new QLabel("-");
+    m_lblRecepcion     = new QLabel("-");
+    m_lblVencimiento   = new QLabel("-");
+    m_lblStatus        = new QLabel("-");
+    m_lblDias          = new QLabel("-");
+    m_lblComision      = new QLabel("-");
+    m_lblNotas         = new QLabel("-");
     m_lblNotas->setWordWrap(true);
 
-    QLabel* valueLabels[10] = {
-        m_lblEmisor, m_lblVendedor, m_lblFolio, m_lblTipo,
+    QLabel* valueLabels[11] = {
+        m_lblEmisor, m_lblVendedor, m_lblFacturacion, m_lblFolio, m_lblTipo,
         m_lblRecepcion, m_lblVencimiento, m_lblStatus, m_lblDias,
         m_lblComision, m_lblNotas
     };
 
-    for (int i = 0; i < 10; ++i) {
+    int detailTotalHeight = 0;
+    for (int i = 0; i < 11; ++i) {
         auto* keyLbl = new QLabel(rowLabels[i] + ":");
         keyLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        keyLbl->setStyleSheet("color: palette(mid); font-size: 12px; padding: 0 10px 0 6px;");
+        // palette(mid) en macOS dark mode es ~#3C3C3C, invisible sobre fondos oscuros.
+        // #8C8C8C da contraste legible en modo claro (~3.5:1) y oscuro (~4:1).
+        keyLbl->setStyleSheet("color: #8C8C8C; font-size: 12px; padding: 0 10px 0 6px;");
         detailTable->setCellWidget(i, 0, keyLbl);
 
         valueLabels[i]->setContentsMargins(6, 0, 6, 0);
         valueLabels[i]->setStyleSheet(valueLabels[i]->styleSheet()); // inherit
         detailTable->setCellWidget(i, 1, valueLabels[i]);
-        detailTable->setRowHeight(i, i == 9 ? 36 : 28);
+        int rowH = (i == 10 ? 36 : 28);
+        detailTable->setRowHeight(i, rowH);
+        detailTotalHeight += rowH;
     }
+
+    // Fijar la altura exacta al contenido para evitar scroll interno.
+    // frameWidth() es 0 porque usamos NoFrame, pero lo incluimos por robustez.
+    detailTable->setFixedHeight(detailTotalHeight + detailTable->frameWidth() * 2);
+    detailTable->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    detailTable->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     grpLayout->addWidget(detailTable);
     rightLayout->addWidget(m_detailGroup);
@@ -221,20 +232,21 @@ void ConcesionesWidget::setupUi() {
     // Mini-tabla de productos vinculados
     auto* prodGroup  = new QGroupBox("Productos vinculados");
     auto* prodLayout = new QVBoxLayout(prodGroup);
-    m_productosModel = new QStandardItemModel(0, 5, this);
-    m_productosModel->setHorizontalHeaderLabels({"Producto", "Tipo", "Qty", "Precio Final", "Fecha"});
-    m_productosView  = new QTableView();
-    m_productosView->setModel(m_productosModel);
-    m_productosView->horizontalHeader()->setStretchLastSection(true);
-    m_productosView->horizontalHeader()->setHighlightSections(false);
-    m_productosView->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_productosView->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_productosView->setAlternatingRowColors(true);
-    m_productosView->setShowGrid(false);
-    m_productosView->setFocusPolicy(Qt::NoFocus);
-    m_productosView->verticalHeader()->setVisible(false);
-    m_productosView->setMinimumHeight(90);
-    prodLayout->addWidget(m_productosView);
+    m_productosTable = new QTableWidget(0, 6);
+    m_productosTable->setHorizontalHeaderLabels({"Producto", "Tipo", "Qty", "Precio Final", "Fecha", "Acciones"});
+    m_productosTable->horizontalHeader()->setStretchLastSection(false);
+    m_productosTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    m_productosTable->horizontalHeader()->setSectionResizeMode(5, QHeaderView::Fixed);
+    m_productosTable->setColumnWidth(5, 72);
+    m_productosTable->horizontalHeader()->setHighlightSections(false);
+    m_productosTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_productosTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_productosTable->setAlternatingRowColors(true);
+    m_productosTable->setShowGrid(false);
+    m_productosTable->setFocusPolicy(Qt::NoFocus);
+    m_productosTable->verticalHeader()->setVisible(false);
+    m_productosTable->setMinimumHeight(90);
+    prodLayout->addWidget(m_productosTable);
 
     auto* corteBtnRow = new QHBoxLayout();
     m_btnAgregarProducto = new QPushButton("+ Agregar Producto");
@@ -437,9 +449,21 @@ void ConcesionesWidget::onSelectionChanged() {
 void ConcesionesWidget::updateDetailPanel(const Calculadora::ConcesionRecord& rec) {
     m_lblEmisor->setText(rec.emisorNombre.isEmpty() ? "-" : rec.emisorNombre);
     m_lblVendedor->setText(rec.emisorNombreVendedor.isEmpty() ? "-" : rec.emisorNombreVendedor);
+    m_lblFacturacion->setText(rec.emisorFacturacion ? "Proveedor factura" : "Proveedor no factura");
+    // #43A047 (verde 600) es visible tanto en modo claro como oscuro.
+    // #E65100 (naranja) tiene suficiente luminosidad para ambos modos.
+    m_lblFacturacion->setStyleSheet(rec.emisorFacturacion
+        ? "color: #43A047; font-size: 12px; padding-left: 6px;"
+        : "color: #E65100; font-size: 12px; padding-left: 6px;");
     m_lblFolio->setText(rec.folio.isEmpty() ? "-" : rec.folio);
-    m_lblTipo->setText(rec.tipoDocumento == Calculadora::TipoDocumentoConcesion::NotaDeCredito
-                       ? "Nota de credito" : "Factura");
+
+    static const QMap<Calculadora::TipoDocumentoConcesion, QString> tipoDisplay = {
+        { Calculadora::TipoDocumentoConcesion::Factura,        "Factura" },
+        { Calculadora::TipoDocumentoConcesion::NotaDeCredito,  "Nota de credito" },
+        { Calculadora::TipoDocumentoConcesion::NotaDeRemision, "Nota de remision" },
+        { Calculadora::TipoDocumentoConcesion::Otro,           "Otro" },
+    };
+    m_lblTipo->setText(tipoDisplay.value(rec.tipoDocumento, "Factura"));
     m_lblRecepcion->setText(rec.fechaRecepcion.isEmpty() ? "-" : rec.fechaRecepcion);
     m_lblVencimiento->setText(rec.fechaVencimiento.isEmpty() ? "-" : rec.fechaVencimiento);
 
@@ -470,21 +494,57 @@ void ConcesionesWidget::updateDetailPanel(const Calculadora::ConcesionRecord& re
     m_btnAbrirDoc->setEnabled(false);
 
     // Cargar productos vinculados
-    m_productosModel->removeRows(0, m_productosModel->rowCount());
+    m_productosTable->setRowCount(0);
     const auto vinculadosList = m_productoRepo.findByConcesion(rec.id);
     QLocale loc;
     int vinculados = static_cast<int>(vinculadosList.size());
+    bool concesionActiva = rec.activa;
     for (const auto& p : vinculadosList) {
-        QList<QStandardItem*> row;
-        row << new QStandardItem(p.nombreProducto)
-            << new QStandardItem(p.tipoProducto == Calculadora::TipoProducto::Libro ? "Libro" : "Papeleria")
-            << new QStandardItem(QString::number(p.cantidadRecibida))
-            << new QStandardItem(loc.toCurrencyString(p.precioFinal))
-            << new QStandardItem(p.fecha.left(10));
-        for (auto* it : row) it->setEditable(false);
-        m_productosModel->appendRow(row);
+        int row = m_productosTable->rowCount();
+        m_productosTable->insertRow(row);
+
+        auto mkItem = [](const QString& txt) {
+            auto* it = new QTableWidgetItem(txt);
+            it->setFlags(it->flags() & ~Qt::ItemIsEditable);
+            return it;
+        };
+        m_productosTable->setItem(row, 0, mkItem(p.nombreProducto));
+        m_productosTable->setItem(row, 1, mkItem(p.tipoProducto == Calculadora::TipoProducto::Libro ? "Libro" : "Papeleria"));
+        m_productosTable->setItem(row, 2, mkItem(QString::number(p.cantidadRecibida)));
+        m_productosTable->setItem(row, 3, mkItem(loc.toCurrencyString(p.precioFinal)));
+        m_productosTable->setItem(row, 4, mkItem(p.fecha.left(10)));
+
+        // Columna Acciones: botones Editar y Eliminar con iconos Qt estandar
+        auto* actWidget  = new QWidget();
+        auto* actLayout  = new QHBoxLayout(actWidget);
+        actLayout->setContentsMargins(4, 2, 4, 2);
+        actLayout->setSpacing(4);
+
+        auto* btnEdit = new QPushButton();
+        btnEdit->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+        btnEdit->setToolTip("Editar producto");
+        btnEdit->setFlat(true);
+        btnEdit->setFixedSize(28, 28);
+        btnEdit->setEnabled(concesionActiva);
+
+        auto* btnDel = new QPushButton();
+        btnDel->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+        btnDel->setToolTip("Eliminar producto");
+        btnDel->setFlat(true);
+        btnDel->setFixedSize(28, 28);
+        btnDel->setEnabled(concesionActiva);
+
+        int64_t pid = p.id;
+        connect(btnEdit, &QPushButton::clicked, this, [this, pid]() { onEditarProducto(pid); });
+        connect(btnDel,  &QPushButton::clicked, this, [this, pid]() { onEliminarProducto(pid); });
+
+        actLayout->addWidget(btnEdit);
+        actLayout->addWidget(btnDel);
+        m_productosTable->setCellWidget(row, 5, actWidget);
+        m_productosTable->setRowHeight(row, 34);
     }
-    m_productosView->resizeColumnsToContents();
+    m_productosTable->resizeColumnsToContents();
+    m_productosTable->setColumnWidth(5, 72);  // fijar ancho de Acciones
     m_btnVerCorte->setEnabled(vinculados > 0);
 }
 
@@ -502,7 +562,7 @@ void ConcesionesWidget::clearDetailPanel() {
     m_lblDias->setStyleSheet("");
     m_lblComision->setText(dash);
     m_lblNotas->setText(dash);
-    m_productosModel->removeRows(0, m_productosModel->rowCount());
+    m_productosTable->setRowCount(0);
     m_documentosView->clear();
     m_btnAgregarProducto->setEnabled(false);
     m_btnVerCorte->setEnabled(false);
@@ -523,6 +583,7 @@ void ConcesionesWidget::onNuevaClicked() {
         e.nombreVendedor = dlg.nuevoEmisorVendedor();
         e.telefono       = dlg.nuevoEmisorTelefono();
         e.email          = dlg.nuevoEmisorEmail();
+        e.facturacion    = dlg.nuevoEmisorFacturacion();
         int64_t eid = m_emisorRepo.save(e);
         if (eid < 0) {
             QMessageBox::critical(this, "Error", "No se pudo guardar el distribuidor.");
@@ -570,6 +631,7 @@ void ConcesionesWidget::onEditarClicked() {
         e.nombreVendedor = dlg.nuevoEmisorVendedor();
         e.telefono       = dlg.nuevoEmisorTelefono();
         e.email          = dlg.nuevoEmisorEmail();
+        e.facturacion    = dlg.nuevoEmisorFacturacion();
         int64_t eid = m_emisorRepo.save(e);
         if (eid < 0) {
             QMessageBox::critical(this, "Error", "No se pudo guardar el distribuidor.");
@@ -633,7 +695,7 @@ void ConcesionesWidget::onAgregarProductoClicked() {
     QString folio  = rec.folio.isEmpty()        ? "(Sin folio)"        : rec.folio;
     QString label  = QString("%1 — %2").arg(emisor, folio);
 
-    AgregarProductoDialog dlg(id, label, m_calculator, rec.comisionPct, this);
+    AgregarProductoDialog dlg(id, label, m_calculator, rec.comisionPct, rec.emisorFacturacion, this);
     if (dlg.exec() != QDialog::Accepted) return;
 
     const auto& r = dlg.calculationResult();
@@ -735,6 +797,66 @@ void ConcesionesWidget::onAbrirDocClicked() {
     } else {
         QMessageBox::warning(this, "Error", "No se pudo crear el archivo temporal.");
     }
+}
+
+void ConcesionesWidget::onEditarProducto(int64_t productoId) {
+    // Buscar el producto en la concesion actualmente seleccionada
+    auto* item = m_listWidget->currentItem();
+    if (!item) return;
+    int64_t concesionId = item->data(Qt::UserRole).toLongLong();
+    auto    rec         = m_concesionRepo.findById(concesionId);
+
+    const auto productos = m_productoRepo.findByConcesion(concesionId);
+    Calculadora::ProductoRecord existing;
+    bool found = false;
+    for (const auto& p : productos) {
+        if (p.id == productoId) { existing = p; found = true; break; }
+    }
+    if (!found) return;
+
+    QString emisor = rec.emisorNombre.isEmpty() ? "(Sin distribuidor)" : rec.emisorNombre;
+    QString folio  = rec.folio.isEmpty()        ? "(Sin folio)"        : rec.folio;
+    QString label  = QString("%1 — %2").arg(emisor, folio);
+
+    AgregarProductoDialog dlg(existing, label, m_calculator, rec.comisionPct, rec.emisorFacturacion, this);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const auto& r = dlg.calculationResult();
+    existing.nombreProducto   = dlg.nombreProducto();
+    existing.tipoProducto     = dlg.tipoProducto();
+    existing.isbn             = dlg.isbn();
+    existing.cantidadRecibida = dlg.cantidad();
+    existing.precioFinal      = r.precioFinal;
+    existing.costo            = r.costo;
+    existing.comision         = r.comision;
+    existing.ivaTrasladado    = r.ivaTrasladado;
+    existing.ivaAcreditable   = r.ivaAcreditable;
+    existing.ivaNetoPagar     = r.ivaNetoPagar;
+    existing.escenario        = r.escenario;
+    existing.tieneCFDI        = r.tieneCFDI;
+
+    if (!m_productoRepo.update(existing)) {
+        QMessageBox::critical(this, "Error", "No se pudo actualizar el producto.");
+        return;
+    }
+    updateDetailPanel(rec);
+}
+
+void ConcesionesWidget::onEliminarProducto(int64_t productoId) {
+    auto resp = QMessageBox::question(this, "Eliminar producto",
+        "Eliminar permanentemente este producto de la concesion?");
+    if (resp != QMessageBox::Yes) return;
+
+    if (!m_productoRepo.remove(productoId)) {
+        QMessageBox::critical(this, "Error", "No se pudo eliminar el producto.");
+        return;
+    }
+
+    auto* item = m_listWidget->currentItem();
+    if (!item) return;
+    int64_t concesionId = item->data(Qt::UserRole).toLongLong();
+    auto    rec         = m_concesionRepo.findById(concesionId);
+    updateDetailPanel(rec);
 }
 
 void ConcesionesWidget::onVerAlertasClicked() {

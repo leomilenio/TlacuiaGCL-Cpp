@@ -70,7 +70,7 @@ void MainWindow::setupCentralWidget(int64_t concesionInicial) {
     m_concesionesTab = new ConcesionesWidget(*m_concesionRepo, *m_emisorRepo,
                                              *m_productoRepo, *m_documentoRepo,
                                              *m_calculator, m_tabs);
-    m_emisoresTab    = new EmisoresWidget(*m_emisorRepo, m_tabs);
+    m_emisoresTab    = new EmisoresWidget(*m_emisorRepo, *m_concesionRepo, m_tabs);
     m_historyTab     = new HistoryWidget(*m_productoRepo, m_tabs);
 
     m_tabs->addTab(m_concesionesTab, "Concesiones");
@@ -82,9 +82,11 @@ void MainWindow::setupCentralWidget(int64_t concesionInicial) {
     connect(m_concesionesTab, &ConcesionesWidget::productoAgregado,
             m_historyTab,     &HistoryWidget::refresh);
 
-    // Refrescar indicador de alertas cuando se modifiquen concesiones
+    // Refrescar indicador de alertas y conteo de concesiones en distribuidores
     connect(m_concesionesTab, &ConcesionesWidget::concesionesModificadas,
             this,             &MainWindow::refreshAlertaStatus);
+    connect(m_concesionesTab, &ConcesionesWidget::concesionesModificadas,
+            m_emisoresTab,    &EmisoresWidget::refresh);
 
     setCentralWidget(m_tabs);
 

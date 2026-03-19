@@ -46,15 +46,19 @@ private:
     void clearResults();
 
     // Input
-    QDoubleSpinBox* m_inputSpin       = nullptr;
-    QLabel*         m_inputLabel      = nullptr;
-    QGroupBox*      m_escenarioGroup  = nullptr;
-    QRadioButton*   m_radioPropio     = nullptr;
-    QRadioButton*   m_radioConcesion  = nullptr;
-    QGroupBox*      m_cfdiGroup       = nullptr;
-    QRadioButton*   m_radioConCFDI   = nullptr;
-    QRadioButton*   m_radioSinCFDI   = nullptr;
-    QButtonGroup*   m_escenarioBtnGrp = nullptr;
+    QDoubleSpinBox* m_inputSpin        = nullptr;
+    QLabel*         m_inputLabel       = nullptr;
+    QGroupBox*      m_escenarioGroup   = nullptr;
+    QRadioButton*   m_radioPropio      = nullptr;
+    QRadioButton*   m_radioConcesion   = nullptr;
+    QGroupBox*      m_cfdiGroup        = nullptr;
+    QRadioButton*   m_radioConCFDI    = nullptr;
+    QRadioButton*   m_radioSinCFDI    = nullptr;
+    QButtonGroup*   m_escenarioBtnGrp  = nullptr;
+    QGroupBox*      m_tipoGroup        = nullptr;  // Libro / Papeleria (solo visible en Concesion)
+    QRadioButton*   m_radioPapeleria   = nullptr;
+    QRadioButton*   m_radioLibro       = nullptr;
+    QButtonGroup*   m_tipoBtnGrp       = nullptr;
 
     QLabel*      m_ivaInfoLabel = nullptr;   // Nota fiscal dinamica
 
@@ -68,6 +72,7 @@ private:
     QLabel*    m_lbPrecioFinal        = nullptr;
     QFrame*    m_desgloseFrame        = nullptr;  // Callout — solo visible en Concesion Sin CFDI
     QLabel*    m_lbDesgloseSinCFDI   = nullptr;
+    QLabel*    m_lbIvaCallout         = nullptr;  // Resaltado visual del tipo de IVA
     QLabel*    m_labelCosto           = nullptr;  // Label de fila "Costo" (texto dinamico)
     QLabel*    m_labelComision        = nullptr;  // Label de fila "Comision" (texto dinamico)
     QLabel*    m_lbCosto              = nullptr;

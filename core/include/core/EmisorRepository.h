@@ -13,6 +13,7 @@ struct EmisorRecord {
     QString telefono;
     QString email;
     QString notas;
+    bool    facturacion    = true;  // true = proveedor emite facturas (CFDI)
     QString createdAt;
 };
 

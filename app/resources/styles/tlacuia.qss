@@ -29,6 +29,18 @@ QWidget {
     font-size: 13px;
 }
 
+/* QLabel no hereda color automaticamente cuando el widget padre tiene QSS
+   aplicado (bug conocido de Qt: stylesheet rompe la propagacion del palette).
+   Forzar palette(window-text) garantiza legibilidad en modo claro y oscuro. */
+QLabel {
+    color: palette(window-text);
+}
+
+QCheckBox,
+QRadioButton {
+    color: palette(window-text);
+}
+
 QMainWindow,
 QDialog {
     background-color: palette(window);

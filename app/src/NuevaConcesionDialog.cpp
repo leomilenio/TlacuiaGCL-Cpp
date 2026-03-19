@@ -1,4 +1,5 @@
 #include "app/NuevaConcesionDialog.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QDateEdit>
@@ -69,11 +70,18 @@ void NuevaConcesionDialog::setupUi() {
     m_txtNombreVendedor = new QLineEdit(); m_txtNombreVendedor->setPlaceholderText("Representante de ventas");
     m_txtTelefono       = new QLineEdit(); m_txtTelefono->setPlaceholderText("Opcional");
     m_txtEmail          = new QLineEdit(); m_txtEmail->setPlaceholderText("Opcional");
+    m_chkFacturacion = new QCheckBox("Proveedor emite facturas (CFDI)");
+    m_chkFacturacion->setChecked(true);
     nuevoForm->addRow("Nombre *:",    m_txtNombreEmisor);
     nuevoForm->addRow("Vendedor:",    m_txtNombreVendedor);
     nuevoForm->addRow("Telefono:",    m_txtTelefono);
     nuevoForm->addRow("Email:",       m_txtEmail);
+    nuevoForm->addRow("Facturacion:", m_chkFacturacion);
     m_grpNuevoEmisor->setVisible(false);
+
+    // Cuando cambia el checkbox de facturacion en nuevo emisor, actualizar tipo combo
+    connect(m_chkFacturacion, &QCheckBox::toggled,
+            this, [this](bool checked) { updateTipoCombo(checked); });
     emisorLayout->addWidget(m_grpNuevoEmisor);
 
     mainLayout->addWidget(emisorGroup);
@@ -223,9 +231,41 @@ void NuevaConcesionDialog::loadEmisores() {
     }
 }
 
+void NuevaConcesionDialog::updateTipoCombo(bool factura) {
+    // Preservar seleccion actual si es compatible
+    QString currentVal = m_cmbTipo->currentData().toString();
+    m_cmbTipo->blockSignals(true);
+    m_cmbTipo->clear();
+    if (factura) {
+        m_cmbTipo->addItem("Factura",         QVariant("Factura"));
+        m_cmbTipo->addItem("Nota de credito", QVariant("Nota de credito"));
+        // Restaurar si compatible
+        if (currentVal == "Factura" || currentVal == "Nota de credito") {
+            m_cmbTipo->setCurrentIndex(m_cmbTipo->findData(currentVal));
+        }
+    } else {
+        m_cmbTipo->addItem("Nota de remision", QVariant("Nota de remision"));
+        m_cmbTipo->addItem("Otro",             QVariant("Otro"));
+        if (currentVal == "Nota de remision" || currentVal == "Otro") {
+            m_cmbTipo->setCurrentIndex(m_cmbTipo->findData(currentVal));
+        }
+    }
+    m_cmbTipo->blockSignals(false);
+}
+
 void NuevaConcesionDialog::onEmisorSelectionChanged(int /*index*/) {
     bool esNuevo = (m_cmbEmisor->currentData().toLongLong() == -1LL);
     m_grpNuevoEmisor->setVisible(esNuevo);
+
+    if (esNuevo) {
+        // Nuevo emisor: usar el estado del checkbox de facturacion
+        updateTipoCombo(m_chkFacturacion->isChecked());
+    } else {
+        // Emisor existente: cargar su propiedad facturacion
+        int64_t id = m_cmbEmisor->currentData().toLongLong();
+        auto emisor = m_emisorRepo.findById(id);
+        updateTipoCombo(emisor.facturacion);
+    }
     adjustSize();
 }
 
@@ -261,9 +301,16 @@ void NuevaConcesionDialog::populateFrom(const Calculadora::ConcesionRecord& reco
             break;
         }
     }
-    // Tipo de documento
-    int tipoIdx = (record.tipoDocumento == Calculadora::TipoDocumentoConcesion::NotaDeCredito) ? 1 : 0;
-    m_cmbTipo->setCurrentIndex(tipoIdx);
+    // Tipo de documento — el combo ya fue actualizado por onEmisorSelectionChanged
+    // Seleccionar el valor guardado
+    static const QMap<Calculadora::TipoDocumentoConcesion, QString> tipoStr = {
+        { Calculadora::TipoDocumentoConcesion::Factura,         "Factura" },
+        { Calculadora::TipoDocumentoConcesion::NotaDeCredito,   "Nota de credito" },
+        { Calculadora::TipoDocumentoConcesion::NotaDeRemision,  "Nota de remision" },
+        { Calculadora::TipoDocumentoConcesion::Otro,            "Otro" },
+    };
+    int tipoIdx = m_cmbTipo->findData(tipoStr.value(record.tipoDocumento, "Factura"));
+    if (tipoIdx >= 0) m_cmbTipo->setCurrentIndex(tipoIdx);
     m_txtFolio->setText(record.folio);
     if (!record.fechaRecepcion.isEmpty())
         m_dateFechaRec->setDate(QDate::fromString(record.fechaRecepcion, Qt::ISODate));
@@ -299,9 +346,11 @@ Calculadora::ConcesionRecord NuevaConcesionDialog::result() const {
         r.emisorNombre = m_cmbEmisor->currentText();
     }
 
-    r.tipoDocumento = (m_cmbTipo->currentData().toString() == "Nota de credito")
-                      ? Calculadora::TipoDocumentoConcesion::NotaDeCredito
-                      : Calculadora::TipoDocumentoConcesion::Factura;
+    QString tipoStr = m_cmbTipo->currentData().toString();
+    if      (tipoStr == "Nota de credito")  r.tipoDocumento = Calculadora::TipoDocumentoConcesion::NotaDeCredito;
+    else if (tipoStr == "Nota de remision") r.tipoDocumento = Calculadora::TipoDocumentoConcesion::NotaDeRemision;
+    else if (tipoStr == "Otro")             r.tipoDocumento = Calculadora::TipoDocumentoConcesion::Otro;
+    else                                    r.tipoDocumento = Calculadora::TipoDocumentoConcesion::Factura;
     r.folio         = m_txtFolio->text().trimmed();
     r.fechaRecepcion = m_dateFechaRec->date().toString(Qt::ISODate);
 
@@ -329,11 +378,12 @@ Calculadora::ConcesionRecord NuevaConcesionDialog::result() const {
     return r;
 }
 
-bool    NuevaConcesionDialog::isNuevoEmisor()       const { return m_cmbEmisor->currentData().toLongLong() == -1LL; }
-QString NuevaConcesionDialog::nuevoEmisorNombre()   const { return m_txtNombreEmisor->text().trimmed(); }
-QString NuevaConcesionDialog::nuevoEmisorVendedor() const { return m_txtNombreVendedor->text().trimmed(); }
-QString NuevaConcesionDialog::nuevoEmisorTelefono() const { return m_txtTelefono->text().trimmed(); }
-QString NuevaConcesionDialog::nuevoEmisorEmail()    const { return m_txtEmail->text().trimmed(); }
+bool    NuevaConcesionDialog::isNuevoEmisor()         const { return m_cmbEmisor->currentData().toLongLong() == -1LL; }
+QString NuevaConcesionDialog::nuevoEmisorNombre()    const { return m_txtNombreEmisor->text().trimmed(); }
+QString NuevaConcesionDialog::nuevoEmisorVendedor()  const { return m_txtNombreVendedor->text().trimmed(); }
+QString NuevaConcesionDialog::nuevoEmisorTelefono()  const { return m_txtTelefono->text().trimmed(); }
+QString NuevaConcesionDialog::nuevoEmisorEmail()     const { return m_txtEmail->text().trimmed(); }
+bool    NuevaConcesionDialog::nuevoEmisorFacturacion() const { return m_chkFacturacion->isChecked(); }
 
 QStringList NuevaConcesionDialog::adjuntosSeleccionados() const {
     QStringList paths;

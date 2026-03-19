@@ -17,10 +17,14 @@
 
 namespace Calculadora {
 
-// Tipos de documento alineados con TlacuiaGCL
+// Tipos de documento.
+// Si el proveedor factura: Factura | NotaDeCredito
+// Si el proveedor NO factura: NotaDeRemision | Otro
 enum class TipoDocumentoConcesion {
     Factura,
-    NotaDeCredito
+    NotaDeCredito,
+    NotaDeRemision,
+    Otro
 };
 
 // Status calculado (no almacenado en DB) — logica identica a TlacuiaGCL
@@ -36,6 +40,7 @@ struct ConcesionRecord {
     int64_t  emisorId              = 0;       // FK a emisores.id
     QString  emisorNombre;                    // JOIN-filled al leer (o texto legado)
     QString  emisorNombreVendedor;            // JOIN-filled al leer
+    bool     emisorFacturacion = true;        // JOIN-filled: true = proveedor emite CFDI
     QString  emisorContacto;                 // Legado — texto plano sin FK
     QString  folio;                          // numero de referencia del documento
     QString  fechaRecepcion;                 // ISO 8601 (YYYY-MM-DD)
@@ -66,6 +71,8 @@ public:
     [[nodiscard]] bool                   update(const ConcesionRecord& record);
     [[nodiscard]] bool                   remove(int64_t id);
     [[nodiscard]] bool                   finalizar(int64_t id);
+    // Numero de concesiones activas vinculadas a un emisor.
+    [[nodiscard]] int                    countActiveByEmisor(int64_t emisorId) const;
 
 private:
     [[nodiscard]] ConcesionRecord mapRow(const QSqlQuery& query) const;

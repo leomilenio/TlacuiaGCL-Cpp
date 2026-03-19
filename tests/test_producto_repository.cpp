@@ -30,6 +30,13 @@ protected:
         m_repo = std::make_unique<ProductoRepository>(*m_dbManager);
     }
 
+    void TearDown() override {
+        // Destruir el repo ANTES de que DatabaseManager llame removeDatabase,
+        // para que no queden referencias vivas a la conexion SQLite.
+        m_repo.reset();
+        m_dbManager.reset();
+    }
+
     // Crea un ProductoRecord minimo ligado a una concesion ficticia
     ProductoRecord makeProducto(int64_t concesionId,
                                 double costo,

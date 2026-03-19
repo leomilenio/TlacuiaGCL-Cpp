@@ -12,7 +12,8 @@ namespace Calculadora {
 //   4 — tabla emisores (distribuidores) + FK emisor_id en concesiones
 //   5 — cantidad_recibida + cantidad_vendida en productos_calculados (Sprint 2)
 //   6 — comision_pct en concesiones (Sprint 5) + tabla documentos_concesion (Sprint 6)
-static constexpr int SCHEMA_VERSION_CURRENT = 6;
+//   7 — facturacion en emisores; tipo_documento ampliado ('Nota de remision','Otro')
+static constexpr int SCHEMA_VERSION_CURRENT = 7;
 
 class DatabaseManager {
 public:
@@ -33,6 +34,7 @@ private:
     [[nodiscard]] bool migrateV3toV4();   // tabla emisores + FK en concesiones
     [[nodiscard]] bool migrateV4toV5();   // cantidad_recibida + cantidad_vendida
     [[nodiscard]] bool migrateV5toV6();   // comision_pct + documentos_concesion
+    [[nodiscard]] bool migrateV6toV7();   // facturacion en emisores; tipo_documento ampliado
 
     [[nodiscard]] int  getSchemaVersion();
     bool               setSchemaVersion(int version);
