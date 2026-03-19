@@ -15,20 +15,43 @@ AboutDialog::AboutDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle("Acerca de TlacuiaGCL");
-    setFixedWidth(400);
+    setFixedWidth(420);
     setWindowFlags(windowFlags() & ~Qt::WindowContextHelpButtonHint);
+
+    // Deteccion de modo oscuro: determina colores adaptativos y logo ARLE
+    const bool darkMode = palette().color(QPalette::Window).lightness() < 128;
+    const QString arleLogoPath = darkMode ? ":/icons/arleLogo_White.png"
+                                          : ":/icons/arleLogo_Black.png";
+    const QString cSecundario = "color: palette(placeholder-text);";
+    const QString cContacto   = darkMode ? "color: #EF9A9A; font-size: 12px;"
+                                         : "color: #B71C1C; font-size: 12px;";
 
     auto* main = new QVBoxLayout(this);
     main->setContentsMargins(28, 24, 28, 24);
     main->setSpacing(0);
 
-    // ---- Logo ----
-    auto* logoLbl = new QLabel();
-    QPixmap logo(":/icons/TlacuiaLogo.png");
-    if (!logo.isNull())
-        logoLbl->setPixmap(logo.scaledToWidth(160, Qt::SmoothTransformation));
-    logoLbl->setAlignment(Qt::AlignHCenter);
-    main->addWidget(logoLbl);
+    // ---- Logos: [TlacuiaLogo] [ARLE Logo] ----
+    auto* logosRow = new QHBoxLayout();
+    logosRow->setSpacing(20);
+    logosRow->setAlignment(Qt::AlignHCenter);
+
+    auto* tlacuiaLogoLbl = new QLabel();
+    QPixmap tlacuiaLogo(":/icons/TlacuiaLogo.png");
+    if (!tlacuiaLogo.isNull())
+        tlacuiaLogoLbl->setPixmap(tlacuiaLogo.scaledToHeight(110, Qt::SmoothTransformation));
+    tlacuiaLogoLbl->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
+
+    auto* arleLogoLbl = new QLabel();
+    QPixmap arleLogo(arleLogoPath);
+    if (!arleLogo.isNull())
+        arleLogoLbl->setPixmap(arleLogo.scaledToHeight(110, Qt::SmoothTransformation));
+    arleLogoLbl->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
+
+    logosRow->addStretch();
+    logosRow->addWidget(tlacuiaLogoLbl);
+    logosRow->addWidget(arleLogoLbl);
+    logosRow->addStretch();
+    main->addLayout(logosRow);
     main->addSpacing(14);
 
     // ---- Título ----
@@ -43,7 +66,7 @@ AboutDialog::AboutDialog(QWidget* parent)
     // ---- Versión ----
     auto* verLbl = new QLabel(QString("Versión %1").arg(QApplication::applicationVersion()));
     verLbl->setAlignment(Qt::AlignHCenter);
-    verLbl->setStyleSheet("color: palette(mid); font-size: 12px;");
+    verLbl->setStyleSheet(cSecundario + " font-size: 12px;");
     main->addWidget(verLbl);
     main->addSpacing(16);
 
@@ -51,7 +74,6 @@ AboutDialog::AboutDialog(QWidget* parent)
     auto addSep = [&]() {
         auto* s = new QFrame();
         s->setFrameShape(QFrame::HLine);
-        s->setStyleSheet("color: palette(mid);");
         main->addWidget(s);
     };
     addSep();
@@ -74,7 +96,7 @@ AboutDialog::AboutDialog(QWidget* parent)
     // ---- Desarrollador ----
     auto* devHeaderLbl = new QLabel("Desarrollado por");
     devHeaderLbl->setAlignment(Qt::AlignHCenter);
-    devHeaderLbl->setStyleSheet("color: palette(mid); font-size: 11px;");
+    devHeaderLbl->setStyleSheet(cSecundario + " font-size: 11px;");
     main->addWidget(devHeaderLbl);
     main->addSpacing(3);
 
@@ -87,14 +109,14 @@ AboutDialog::AboutDialog(QWidget* parent)
 
     auto* contactLbl = new QLabel("arlesoftware.com.mx");
     contactLbl->setAlignment(Qt::AlignHCenter);
-    contactLbl->setStyleSheet("color: #790000; font-size: 12px;");
+    contactLbl->setStyleSheet(cContacto);
     main->addWidget(contactLbl);
     main->addSpacing(20);
 
     // ---- Licencia ----
     auto* licLbl = new QLabel("Desarrollado bajo licencia MIT");
     licLbl->setAlignment(Qt::AlignHCenter);
-    licLbl->setStyleSheet("color: palette(mid); font-size: 11px;");
+    licLbl->setStyleSheet(cSecundario + " font-size: 11px;");
     main->addWidget(licLbl);
     main->addSpacing(20);
 

@@ -13,7 +13,8 @@ namespace Calculadora {
 //   5 — cantidad_recibida + cantidad_vendida en productos_calculados (Sprint 2)
 //   6 — comision_pct en concesiones (Sprint 5) + tabla documentos_concesion (Sprint 6)
 //   7 — facturacion en emisores; tipo_documento ampliado ('Nota de remision','Otro')
-static constexpr int SCHEMA_VERSION_CURRENT = 7;
+//   8 — tabla app_config (datos e identidad visual de la libreria)
+static constexpr int SCHEMA_VERSION_CURRENT = 8;
 
 class DatabaseManager {
 public:
@@ -23,8 +24,9 @@ public:
     [[nodiscard]] bool initialize();
     [[nodiscard]] bool isOpen() const;
 
-    QSqlDatabase& database();
+    QSqlDatabase&  database();
     const QString& connectionName() const;
+    const QString& dbPath() const { return m_dbPath; }
 
 private:
     [[nodiscard]] bool runMigrations();
@@ -35,6 +37,7 @@ private:
     [[nodiscard]] bool migrateV4toV5();   // cantidad_recibida + cantidad_vendida
     [[nodiscard]] bool migrateV5toV6();   // comision_pct + documentos_concesion
     [[nodiscard]] bool migrateV6toV7();   // facturacion en emisores; tipo_documento ampliado
+    [[nodiscard]] bool migrateV7toV8();   // tabla app_config (datos e identidad de la libreria)
 
     [[nodiscard]] int  getSchemaVersion();
     bool               setSchemaVersion(int version);

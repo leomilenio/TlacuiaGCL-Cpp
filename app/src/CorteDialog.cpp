@@ -1,4 +1,5 @@
 #include "app/CorteDialog.h"
+#include <QDebug>
 #include "app/CortePdfExporter.h"
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -284,7 +285,8 @@ void CorteDialog::onConfirmarClicked() {
         m_productoRepo.updateCantidadVendida(m_productos[i].id, spin->value());
     }
     // Finalizar la concesion
-    m_concesionRepo.finalizar(m_concesion.id);
+    if (!m_concesionRepo.finalizar(m_concesion.id))
+        qWarning() << "CorteDialog: no se pudo finalizar la concesion id=" << m_concesion.id;
     accept();
 }
 

@@ -233,6 +233,42 @@ QList<ProductoRecord> ProductoRepository::findByConcesion(int64_t concesionId) c
     return result;
 }
 
+EmisorCorteResumen ProductoRepository::calcularResumenEmisor(int64_t emisorId) const {
+    QSqlQuery q(m_db.database());
+    q.prepare(R"(
+        SELECT
+            COUNT(DISTINCT c.id)                                             AS total_conc,
+            COALESCE(SUM(p.cantidad_recibida), 0)                           AS sum_rec,
+            COALESCE(SUM(p.cantidad_vendida), 0)                            AS sum_vend,
+            COALESCE(SUM(p.cantidad_recibida - p.cantidad_vendida), 0)      AS sum_dev,
+            COALESCE(SUM(p.precio_final * p.cantidad_vendida), 0)           AS sum_ingresado,
+            COALESCE(SUM(p.costo * p.cantidad_vendida), 0)                  AS sum_al_dist,
+            COALESCE(SUM(p.costo * (p.cantidad_recibida - p.cantidad_vendida)), 0) AS sum_devolucion
+        FROM concesiones c
+        LEFT JOIN productos_calculados p ON p.concesion_id = c.id
+        WHERE c.emisor_id = :eid AND c.activa = 0
+    )");
+    q.bindValue(":eid", QVariant::fromValue(static_cast<qlonglong>(emisorId)));
+    EmisorCorteResumen r;
+    if (!q.exec() || !q.next()) {
+        qCritical() << "Error en calcularResumenEmisor:" << q.lastError().text();
+        return r;
+    }
+    r.totalConcesiones       = q.value("total_conc").toInt();
+    r.totalUnidadesRecibidas = q.value("sum_rec").toInt();
+    r.totalUnidadesVendidas  = q.value("sum_vend").toInt();
+    r.totalUnidadesDevueltas = q.value("sum_dev").toInt();
+    r.totalIngresado         = q.value("sum_ingresado").toDouble();
+    r.totalAlDistribuidor    = q.value("sum_al_dist").toDouble();
+    r.totalComisiones        = r.totalIngresado - r.totalAlDistribuidor;
+    r.totalDevolucion        = q.value("sum_devolucion").toDouble();
+    if (r.totalUnidadesRecibidas > 0) {
+        r.rotacionPromedio       = r.totalUnidadesVendidas  * 100.0 / r.totalUnidadesRecibidas;
+        r.tasaDevolucionPromedio = r.totalUnidadesDevueltas * 100.0 / r.totalUnidadesRecibidas;
+    }
+    return r;
+}
+
 bool ProductoRepository::updateCantidadVendida(int64_t productoId, int cantidadVendida) {
     QSqlQuery q(m_db.database());
     q.prepare("UPDATE productos_calculados SET cantidad_vendida = :qty WHERE id = :id");

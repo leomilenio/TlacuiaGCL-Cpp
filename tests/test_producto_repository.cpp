@@ -127,9 +127,9 @@ TEST_F(ProductoRepositoryTest, FindByConcesion_DevuelveCorrectamente) {
     auto p1 = makeProducto(3, 100.0, 2);
     auto p2 = makeProducto(3, 200.0, 4);
     auto pOtra = makeProducto(99, 50.0, 1);  // otra concesion
-    m_repo->save(p1);
-    m_repo->save(p2);
-    m_repo->save(pOtra);
+    ASSERT_GT(m_repo->save(p1),    0);
+    ASSERT_GT(m_repo->save(p2),    0);
+    ASSERT_GT(m_repo->save(pOtra), 0);
 
     auto lista = m_repo->findByConcesion(3);
     EXPECT_EQ(lista.size(), 2);

@@ -1,4 +1,5 @@
 #include "app/ConcesionesWidget.h"
+#include <QDebug>
 #include "app/NuevaConcesionDialog.h"
 #include "app/AgregarProductoDialog.h"
 #include "app/CorteDialog.h"
@@ -604,7 +605,8 @@ void ConcesionesWidget::onNuevaClicked() {
         if (!f.open(QIODevice::ReadOnly)) continue;
         QFileInfo fi(path);
         QString tipo = fi.suffix().toLower() == "pdf" ? "PDF" : "Excel";
-        m_documentoRepo.save(nuevaId, fi.fileName(), tipo, f.readAll());
+        if (m_documentoRepo.save(nuevaId, fi.fileName(), tipo, f.readAll()) < 0)
+            qWarning() << "ConcesionesWidget: no se pudo guardar el documento:" << fi.fileName();
     }
 
     if (nuevoEmisor) emit emisorCreado();

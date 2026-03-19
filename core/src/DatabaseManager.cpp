@@ -31,6 +31,23 @@ bool DatabaseManager::initialize() {
         dir.mkpath(dir.absolutePath());
     }
 
+    // Aplicar restauracion pendiente (si el usuario cargo un respaldo en la sesion anterior).
+    // Esto ocurre ANTES de abrir la conexion para evitar conflictos con WAL.
+    const QString candidate = m_dbPath + ".restore_candidate";
+    if (QFile::exists(candidate)) {
+        qDebug() << "DatabaseManager: aplicando restauracion pendiente desde" << candidate;
+        QFile::remove(m_dbPath);
+        QFile::remove(m_dbPath + "-wal");
+        QFile::remove(m_dbPath + "-shm");
+        if (QFile::copy(candidate, m_dbPath)) {
+            QFile::remove(candidate);
+            qDebug() << "DatabaseManager: restauracion completada.";
+        } else {
+            qCritical() << "DatabaseManager: no se pudo aplicar la restauracion. "
+                           "El candidato se conserva en" << candidate;
+        }
+    }
+
     m_db = QSqlDatabase::addDatabase("QSQLITE", m_connectionName);
     m_db.setDatabaseName(m_dbPath);
 
@@ -103,6 +120,11 @@ bool DatabaseManager::runMigrations() {
     if (current < 7) {
         if (!migrateV6toV7()) return false;
         setSchemaVersion(7);
+        current = 7;
+    }
+    if (current < 8) {
+        if (!migrateV7toV8()) return false;
+        setSchemaVersion(8);
     }
     return true;
 }
@@ -460,6 +482,34 @@ bool DatabaseManager::migrateV6toV7() {
     q.exec("PRAGMA foreign_keys = ON");
 
     qDebug() << "Migracion V6->V7 completada (facturacion, tipo_documento ampliado).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V7 -> V8: tabla app_config — datos e identidad visual de la libreria
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV7toV8() {
+    QSqlQuery q(m_db);
+    if (!q.exec(R"(
+        CREATE TABLE IF NOT EXISTS app_config (
+            id                  INTEGER PRIMARY KEY CHECK(id = 1),
+            libreria_nombre     TEXT    NOT NULL DEFAULT '',
+            empresa_nombre      TEXT    NOT NULL DEFAULT '',
+            rfc                 TEXT    NOT NULL DEFAULT '',
+            tel1                TEXT    NOT NULL DEFAULT '',
+            tel2                TEXT    NOT NULL DEFAULT '',
+            logo_libreria       BLOB,
+            logo_libreria_mime  TEXT,
+            logo_empresa        BLOB,
+            logo_empresa_mime   TEXT
+        )
+    )")) {
+        qCritical() << "migrateV7toV8 crear app_config:" << q.lastError().text();
+        return false;
+    }
+    // Insertar fila inicial si no existe
+    q.exec("INSERT OR IGNORE INTO app_config (id) VALUES (1)");
+    qDebug() << "Migracion V7->V8 completada (app_config).";
     return true;
 }
 

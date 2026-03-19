@@ -4,6 +4,8 @@
     <file alias="icon.icns">icons/icon.icns</file>
     <file alias="icon.ico">icons/icon.ico</file>
     <file alias="TlacuiaLogo.png">icons/TlacuiaLogo.png</file>
+    <file alias="arleLogo_Black.png">icons/arleLogo_Black.png</file>
+    <file alias="arleLogo_White.png">icons/arleLogo_White.png</file>
   </qresource>
   <qresource prefix="/styles">
     <file>styles/tlacuia.qss</file>

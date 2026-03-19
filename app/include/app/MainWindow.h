@@ -13,6 +13,7 @@ class ConcesionRepository;
 class EmisorRepository;
 class DocumentoRepository;
 class PriceCalculator;
+class LibreriaConfigRepository;
 }
 
 namespace App {
@@ -37,6 +38,7 @@ public slots:
 
 private slots:
     void onCalculadoraRequested();
+    void onPreferenciasRequested();
     void onBuscarActualizacionesRequested();
     void onAboutRequested();
 
@@ -56,7 +58,8 @@ private:
     std::unique_ptr<Calculadora::ConcesionRepository>  m_concesionRepo;
     std::unique_ptr<Calculadora::EmisorRepository>     m_emisorRepo;
     std::unique_ptr<Calculadora::DocumentoRepository>  m_documentoRepo;
-    std::unique_ptr<Calculadora::PriceCalculator>      m_calculator;
+    std::unique_ptr<Calculadora::PriceCalculator>          m_calculator;
+    std::unique_ptr<Calculadora::LibreriaConfigRepository> m_libreriaConfigRepo;
 };
 
 } // namespace App

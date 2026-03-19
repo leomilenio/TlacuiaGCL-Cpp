@@ -27,6 +27,9 @@ add_executable(CalculadoraPapeleria WIN32 MACOSX_BUNDLE
     include/app/AgregarProductoDialog.h
     include/app/CorteDialog.h
     include/app/CortePdfExporter.h
+    include/app/EmisorProfileDialog.h
+    include/app/EmisorPdfExporter.h
+    include/app/SettingsDialog.h
     include/app/SplashConcesionesWindow.h
     include/app/AboutDialog.h
     include/app/UpdateDialog.h
@@ -42,6 +45,9 @@ add_executable(CalculadoraPapeleria WIN32 MACOSX_BUNDLE
     src/AgregarProductoDialog.cpp
     src/CorteDialog.cpp
     src/CortePdfExporter.cpp
+    src/EmisorProfileDialog.cpp
+    src/EmisorPdfExporter.cpp
+    src/SettingsDialog.cpp
     src/SplashConcesionesWindow.cpp
     src/AboutDialog.cpp
     src/UpdateDialog.cpp

@@ -55,6 +55,20 @@ struct CorteResult {
     bool    isValid                  = false;
 };
 
+// Resumen consolidado de todos los cortes finalizados de un emisor.
+struct EmisorCorteResumen {
+    int    totalConcesiones       = 0;
+    int    totalUnidadesRecibidas = 0;
+    int    totalUnidadesVendidas  = 0;
+    int    totalUnidadesDevueltas = 0;
+    double totalIngresado         = 0.0; // SUM(precio_final * cantidad_vendida)
+    double totalAlDistribuidor    = 0.0; // SUM(costo * cantidad_vendida)
+    double totalComisiones        = 0.0; // totalIngresado - totalAlDistribuidor
+    double totalDevolucion        = 0.0; // SUM(costo * cantidad_devuelta)
+    double rotacionPromedio       = 0.0; // vendidas / recibidas (%)
+    double tasaDevolucionPromedio = 0.0; // devueltas / recibidas (%)
+};
+
 class DatabaseManager;
 
 class ProductoRepository {
@@ -83,6 +97,9 @@ public:
 
     // Actualiza la cantidad vendida de un producto (para CorteDialog).
     bool updateCantidadVendida(int64_t productoId, int cantidadVendida);
+
+    // Resumen financiero consolidado de todos los cortes finalizados de un emisor.
+    [[nodiscard]] EmisorCorteResumen calcularResumenEmisor(int64_t emisorId) const;
 
 private:
     [[nodiscard]] ProductoRecord mapRow(const QSqlQuery& query) const;

@@ -82,7 +82,7 @@ void UpdateDialog::setupUi() {
         layout->addWidget(sep);
         auto* lblNotes = new QLabel(notes);
         lblNotes->setWordWrap(true);
-        lblNotes->setStyleSheet("color: palette(mid); font-size: 11px;");
+        lblNotes->setStyleSheet("color: palette(placeholder-text); font-size: 11px;");
         layout->addWidget(lblNotes);
     }
 
@@ -141,10 +141,16 @@ void UpdateDialog::onReplyFinished(QNetworkReply* reply) {
     m_btnVerificar->setEnabled(true);
     reply->deleteLater();
 
+    // Colores adaptativos segun el modo del sistema
+    const bool dark      = palette().color(QPalette::Window).lightness() < 128;
+    const QString cRojo  = dark ? QStringLiteral("#EF9A9A") : QStringLiteral("#C62828");
+    const QString cNaranja = dark ? QStringLiteral("#FF8A65") : QStringLiteral("#E65100");
+    const QString cVerde = dark ? QStringLiteral("#81C784") : QStringLiteral("#2E7D32");
+
     if (reply->error() != QNetworkReply::NoError) {
         setStatus(QString(
-            "<span style='color:#C62828;'>&#10007; No se pudo conectar con GitHub.<br>"
-            "<small>%1</small></span>").arg(reply->errorString().toHtmlEscaped()));
+            "<span style='color:%1;'>&#10007; No se pudo conectar con GitHub.<br>"
+            "<small>%2</small></span>").arg(cRojo, reply->errorString().toHtmlEscaped()));
         return;
     }
 
@@ -152,7 +158,7 @@ void UpdateDialog::onReplyFinished(QNetworkReply* reply) {
     const QJsonObject obj = QJsonDocument::fromJson(data).object();
 
     if (obj.isEmpty()) {
-        setStatus("<span style='color:#C62828;'>&#10007; Respuesta inesperada del servidor.</span>");
+        setStatus(QString("<span style='color:%1;'>&#10007; Respuesta inesperada del servidor.</span>").arg(cRojo));
         return;
     }
 
@@ -165,7 +171,7 @@ void UpdateDialog::onReplyFinished(QNetworkReply* reply) {
     const QString current    = QApplication::applicationVersion();
 
     if (tagName.isEmpty()) {
-        setStatus("<span style='color:#C62828;'>&#10007; No se encontraron releases publicados.</span>");
+        setStatus(QString("<span style='color:%1;'>&#10007; No se encontraron releases publicados.</span>").arg(cRojo));
         return;
     }
 
@@ -173,13 +179,13 @@ void UpdateDialog::onReplyFinished(QNetworkReply* reply) {
         m_urlDescargas = releaseUrl;
         m_btnDescargas->setVisible(true);
         setStatus(QString(
-            "<span style='color:#E65100;'><b>&#9888; Nueva version disponible: %1</b></span><br>"
-            "<small>Version instalada: %2</small>")
-            .arg(tagName, current));
+            "<span style='color:%1;'><b>&#9888; Nueva version disponible: %2</b></span><br>"
+            "<small>Version instalada: %3</small>")
+            .arg(cNaranja, tagName, current));
     } else {
         setStatus(QString(
-            "<span style='color:#2E7D32;'>&#10003; <b>La aplicacion esta al dia</b> (v%1)</span>")
-            .arg(current));
+            "<span style='color:%1;'>&#10003; <b>La aplicacion esta al dia</b> (v%2)</span>")
+            .arg(cVerde, current));
     }
 }
 

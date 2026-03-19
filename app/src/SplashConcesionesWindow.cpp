@@ -1,4 +1,5 @@
 #include "app/SplashConcesionesWindow.h"
+#include <QDebug>
 #include "core/AppConfig.h"
 #include "core/DatabaseManager.h"
 #include "core/ConcesionRepository.h"
@@ -49,7 +50,8 @@ SplashConcesionesWindow::SplashConcesionesWindow(const QString& dbPath, QWidget*
     , m_dbPath(dbPath)
 {
     m_dbManager     = std::make_unique<Calculadora::DatabaseManager>(m_dbPath);
-    m_dbManager->initialize();
+    if (!m_dbManager->initialize())
+        qWarning() << "SplashConcesionesWindow: fallo la inicializacion de la base de datos";
     m_concesionRepo = std::make_unique<Calculadora::ConcesionRepository>(*m_dbManager);
 
     setupUi();

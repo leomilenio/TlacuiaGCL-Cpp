@@ -5,6 +5,7 @@
 #include "app/HistoryWidget.h"
 #include "app/ConcesionesWidget.h"
 #include "app/EmisoresWidget.h"
+#include "app/SettingsDialog.h"
 #include "core/AppConfig.h"
 #include "core/DatabaseManager.h"
 #include "core/ProductoRepository.h"
@@ -12,6 +13,7 @@
 #include "core/EmisorRepository.h"
 #include "core/DocumentoRepository.h"
 #include "core/PriceCalculator.h"
+#include "core/LibreriaConfigRepository.h"
 #include <QTabWidget>
 #include <QMenuBar>
 #include <QStatusBar>
@@ -45,7 +47,8 @@ void MainWindow::initDatabase() {
     m_concesionRepo  = std::make_unique<Calculadora::ConcesionRepository>(*m_dbManager);
     m_emisorRepo     = std::make_unique<Calculadora::EmisorRepository>(*m_dbManager);
     m_documentoRepo  = std::make_unique<Calculadora::DocumentoRepository>(*m_dbManager);
-    m_calculator     = std::make_unique<Calculadora::PriceCalculator>();
+    m_calculator          = std::make_unique<Calculadora::PriceCalculator>();
+    m_libreriaConfigRepo  = std::make_unique<Calculadora::LibreriaConfigRepository>(*m_dbManager);
 
     if (!m_dbManager->initialize()) {
         QMessageBox::critical(this, "Error de base de datos",
@@ -55,9 +58,30 @@ void MainWindow::initDatabase() {
 }
 
 void MainWindow::setupMenuBar() {
+    // ---- Menú Archivo (Windows/Linux) / App menu (macOS via PreferencesRole) ----
+    QMenu* archivoMenu = menuBar()->addMenu("&Archivo");
+
+    auto* actPreferencias = new QAction("&Preferencias...", this);
+    actPreferencias->setShortcut(QKeySequence::Preferences);
+    // PreferencesRole mueve la accion al menu de la app en macOS automaticamente.
+    // En Windows/Linux permanece en "Archivo".
+    actPreferencias->setMenuRole(QAction::PreferencesRole);
+    connect(actPreferencias, &QAction::triggered, this, &MainWindow::onPreferenciasRequested);
+    archivoMenu->addAction(actPreferencias);
+
+    archivoMenu->addSeparator();
+
+    auto* actSalir = new QAction("&Salir", this);
+    actSalir->setShortcut(QKeySequence::Quit);
+    actSalir->setMenuRole(QAction::QuitRole);
+    connect(actSalir, &QAction::triggered, qApp, &QApplication::quit);
+    archivoMenu->addAction(actSalir);
+
+    // ---- Menú Herramientas ----
     QMenu* toolsMenu = menuBar()->addMenu("&Herramientas");
     toolsMenu->addAction("&Calculadora de Precios", this, &MainWindow::onCalculadoraRequested);
 
+    // ---- Menú Ayuda ----
     QMenu* helpMenu = menuBar()->addMenu("&Ayuda");
     helpMenu->addAction("&Buscar actualizaciones...", this, &MainWindow::onBuscarActualizacionesRequested);
     helpMenu->addSeparator();
@@ -70,7 +94,7 @@ void MainWindow::setupCentralWidget(int64_t concesionInicial) {
     m_concesionesTab = new ConcesionesWidget(*m_concesionRepo, *m_emisorRepo,
                                              *m_productoRepo, *m_documentoRepo,
                                              *m_calculator, m_tabs);
-    m_emisoresTab    = new EmisoresWidget(*m_emisorRepo, *m_concesionRepo, m_tabs);
+    m_emisoresTab    = new EmisoresWidget(*m_emisorRepo, *m_concesionRepo, *m_productoRepo, m_tabs);
     m_historyTab     = new HistoryWidget(*m_productoRepo, m_tabs);
 
     m_tabs->addTab(m_concesionesTab, "Concesiones");
@@ -87,6 +111,8 @@ void MainWindow::setupCentralWidget(int64_t concesionInicial) {
             this,             &MainWindow::refreshAlertaStatus);
     connect(m_concesionesTab, &ConcesionesWidget::concesionesModificadas,
             m_emisoresTab,    &EmisoresWidget::refresh);
+    connect(m_emisoresTab, &EmisoresWidget::navegarAConcesion,
+            this,          &MainWindow::navigateToConcesion);
 
     setCentralWidget(m_tabs);
 
@@ -139,6 +165,11 @@ void MainWindow::refreshAlertaStatus() {
             "<a href='#' style='color:#2E7D32; text-decoration:none;'>"
             "&#10003; Todas las concesiones al dia</a>");
     }
+}
+
+void MainWindow::onPreferenciasRequested() {
+    SettingsDialog dlg(*m_libreriaConfigRepo, *m_dbManager, this);
+    dlg.exec();
 }
 
 void MainWindow::onCalculadoraRequested() {

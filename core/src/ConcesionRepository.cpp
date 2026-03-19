@@ -229,6 +229,40 @@ int ConcesionRepository::countActiveByEmisor(int64_t emisorId) const {
     return 0;
 }
 
+QList<ConcesionRecord> ConcesionRepository::findByEmisor(int64_t emisorId) const {
+    QSqlQuery q(m_db.database());
+    QString sql = QString(BASE_QUERY) + R"(
+        WHERE c.emisor_id = :eid
+        ORDER BY c.activa DESC, c.fecha_vencimiento ASC
+    )";
+    q.prepare(sql);
+    q.bindValue(":eid", QVariant::fromValue(static_cast<qlonglong>(emisorId)));
+    QList<ConcesionRecord> result;
+    if (!q.exec()) {
+        qCritical() << "ConcesionRepo::findByEmisor:" << q.lastError().text();
+        return result;
+    }
+    while (q.next()) result.append(mapRow(q));
+    return result;
+}
+
+QList<ConcesionRecord> ConcesionRepository::findFinalizadasByEmisor(int64_t emisorId) const {
+    QSqlQuery q(m_db.database());
+    QString sql = QString(BASE_QUERY) + R"(
+        WHERE c.emisor_id = :eid AND c.activa = 0
+        ORDER BY c.created_at DESC
+    )";
+    q.prepare(sql);
+    q.bindValue(":eid", QVariant::fromValue(static_cast<qlonglong>(emisorId)));
+    QList<ConcesionRecord> result;
+    if (!q.exec()) {
+        qCritical() << "ConcesionRepo::findFinalizadasByEmisor:" << q.lastError().text();
+        return result;
+    }
+    while (q.next()) result.append(mapRow(q));
+    return result;
+}
+
 bool ConcesionRepository::remove(int64_t id) {
     QSqlQuery q(m_db.database());
     // Nullificar FK en productos_calculados antes de borrar

@@ -73,6 +73,10 @@ public:
     [[nodiscard]] bool                   finalizar(int64_t id);
     // Numero de concesiones activas vinculadas a un emisor.
     [[nodiscard]] int                    countActiveByEmisor(int64_t emisorId) const;
+    // Todas las concesiones de un emisor (activas + finalizadas).
+    [[nodiscard]] QList<ConcesionRecord> findByEmisor(int64_t emisorId) const;
+    // Solo las concesiones finalizadas (activa = 0) de un emisor, ordenadas por fecha DESC.
+    [[nodiscard]] QList<ConcesionRecord> findFinalizadasByEmisor(int64_t emisorId) const;
 
 private:
     [[nodiscard]] ConcesionRecord mapRow(const QSqlQuery& query) const;

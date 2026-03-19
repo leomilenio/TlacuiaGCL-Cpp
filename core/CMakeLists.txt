@@ -6,6 +6,7 @@ add_library(core_lib STATIC
     src/ConcesionRepository.cpp
     src/EmisorRepository.cpp
     src/DocumentoRepository.cpp
+    src/LibreriaConfigRepository.cpp
 )
 
 target_include_directories(core_lib
