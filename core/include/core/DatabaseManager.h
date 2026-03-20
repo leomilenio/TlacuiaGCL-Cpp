@@ -14,7 +14,8 @@ namespace Calculadora {
 //   6 — comision_pct en concesiones (Sprint 5) + tabla documentos_concesion (Sprint 6)
 //   7 — facturacion en emisores; tipo_documento ampliado ('Nota de remision','Otro')
 //   8 — tabla app_config (datos e identidad visual de la libreria)
-static constexpr int SCHEMA_VERSION_CURRENT = 8;
+//   9 — folio_documento en concesiones; tabla folio_counters
+static constexpr int SCHEMA_VERSION_CURRENT = 9;
 
 class DatabaseManager {
 public:
@@ -38,6 +39,7 @@ private:
     [[nodiscard]] bool migrateV5toV6();   // comision_pct + documentos_concesion
     [[nodiscard]] bool migrateV6toV7();   // facturacion en emisores; tipo_documento ampliado
     [[nodiscard]] bool migrateV7toV8();   // tabla app_config (datos e identidad de la libreria)
+    [[nodiscard]] bool migrateV8toV9();
 
     [[nodiscard]] int  getSchemaVersion();
     bool               setSchemaVersion(int version);

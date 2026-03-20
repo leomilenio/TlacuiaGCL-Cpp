@@ -1,6 +1,8 @@
 #include "app/CorteDialog.h"
 #include <QDebug>
 #include "app/CortePdfExporter.h"
+#include "core/FolioRepository.h"
+#include "core/LibreriaConfigRepository.h"
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QSpinBox>
@@ -269,7 +271,18 @@ void CorteDialog::onExportarPdfClicked() {
         gananciaActual += (p.precioFinal - p.costo) * p.cantidadVendida;
     corte.gananciaEstimada = gananciaActual;
 
-    if (!CortePdfExporter::exportar(m_concesion, productosActuales, corte, filePath)) {
+    // Cargar config de libreria y generar/obtener folio del corte
+    Calculadora::LibreriaConfigRepository cfgRepo(m_concesionRepo.database());
+    Calculadora::FolioRepository          folioRepo(m_concesionRepo.database());
+    const auto   config        = cfgRepo.load();
+    const QString folioDoc     = folioRepo.getFolioCorte(m_concesion.id, m_concesion.tipoDocumento);
+
+    const bool includeFirmas = QMessageBox::question(
+        this, "Sección de firmas",
+        "¿Desea incluir la sección de firmas en el PDF?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
+
+    if (!CortePdfExporter::exportar(m_concesion, productosActuales, corte, config, folioDoc, filePath, includeFirmas)) {
         QMessageBox::critical(this, "Error", "No se pudo generar el PDF.");
     } else {
         QMessageBox::information(this, "PDF generado",

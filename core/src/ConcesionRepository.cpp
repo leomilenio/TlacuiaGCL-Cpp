@@ -64,6 +64,7 @@ ConcesionRecord ConcesionRepository::mapRow(const QSqlQuery& q) const {
     r.comisionPct          = q.value("comision_pct").isNull()
                              ? 30.0 : q.value("comision_pct").toDouble();
     r.createdAt            = q.value("created_at").toString();
+    r.folioDocumento       = q.value("folio_documento").toString();
 
     QString td = q.value("tipo_documento").toString();
     if      (td == "Nota de credito")  r.tipoDocumento = TipoDocumentoConcesion::NotaDeCredito;

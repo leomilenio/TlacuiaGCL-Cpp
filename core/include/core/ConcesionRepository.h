@@ -50,6 +50,7 @@ struct ConcesionRecord {
     bool     activa            = true;
     double   comisionPct       = 30.0;  // % de comision acordada (default 30%)
     QString  createdAt;
+    QString  folioDocumento;  // folio del documento de corte (asignado por FolioRepository)
 
     // Status calculado — replica la logica de TlacuiaGCL:
     // "Vence pronto" si dias_restantes <= 14
@@ -77,6 +78,9 @@ public:
     [[nodiscard]] QList<ConcesionRecord> findByEmisor(int64_t emisorId) const;
     // Solo las concesiones finalizadas (activa = 0) de un emisor, ordenadas por fecha DESC.
     [[nodiscard]] QList<ConcesionRecord> findFinalizadasByEmisor(int64_t emisorId) const;
+
+    // Acceso al DatabaseManager subyacente (para crear repos auxiliares en dialogs).
+    DatabaseManager& database() { return m_db; }
 
 private:
     [[nodiscard]] ConcesionRecord mapRow(const QSqlQuery& query) const;

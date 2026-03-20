@@ -125,6 +125,11 @@ bool DatabaseManager::runMigrations() {
     if (current < 8) {
         if (!migrateV7toV8()) return false;
         setSchemaVersion(8);
+        current = 8;
+    }
+    if (current < 9) {
+        if (!migrateV8toV9()) return false;
+        setSchemaVersion(9);
     }
     return true;
 }
@@ -510,6 +515,39 @@ bool DatabaseManager::migrateV7toV8() {
     // Insertar fila inicial si no existe
     q.exec("INSERT OR IGNORE INTO app_config (id) VALUES (1)");
     qDebug() << "Migracion V7->V8 completada (app_config).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V8 -> V9: folio_documento en concesiones + tabla folio_counters
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV8toV9() {
+    QSqlQuery q(m_db);
+
+    // Columna folio_documento en concesiones (puede no existir en DBs antiguas)
+    if (!q.exec("ALTER TABLE concesiones ADD COLUMN folio_documento TEXT DEFAULT NULL")) {
+        // SQLite no soporta IF NOT EXISTS en ALTER TABLE, ignorar si ya existe
+        if (!q.lastError().text().contains("duplicate column", Qt::CaseInsensitive)) {
+            qCritical() << "migrateV8toV9 folio_documento:" << q.lastError().text();
+            return false;
+        }
+    }
+
+    if (!q.exec(R"(
+        CREATE TABLE IF NOT EXISTS folio_counters (
+            tipo     TEXT PRIMARY KEY
+                     CHECK(tipo IN ('corte', 'reporte_interno')),
+            contador INTEGER NOT NULL DEFAULT 0
+        )
+    )")) {
+        qCritical() << "migrateV8toV9 folio_counters:" << q.lastError().text();
+        return false;
+    }
+
+    q.exec("INSERT OR IGNORE INTO folio_counters (tipo, contador) VALUES ('corte', 0)");
+    q.exec("INSERT OR IGNORE INTO folio_counters (tipo, contador) VALUES ('reporte_interno', 0)");
+
+    qDebug() << "Migracion V8->V9 completada (folio_documento + folio_counters).";
     return true;
 }
 

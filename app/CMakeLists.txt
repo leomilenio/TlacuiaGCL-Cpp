@@ -77,6 +77,20 @@ if(WIN32)
     )
 endif()
 
+# macOS: re-firmar el bundle post-build para que Info.plist y Resources queden
+# sellados en la firma ad-hoc. Sin esto, macOS no puede resolver el icono de
+# la app en notificaciones del sistema (aparece el placeholder generico).
+if(APPLE)
+    add_custom_command(TARGET CalculadoraPapeleria POST_BUILD
+        # Limpiar atributos extendidos de Finder antes de firmar
+        # (los archivos .png con metadatos macOS causan "detritus not allowed")
+        COMMAND xattr -cr "$<TARGET_BUNDLE_DIR:CalculadoraPapeleria>"
+        COMMAND codesign --force --deep --sign "-"
+                "$<TARGET_BUNDLE_DIR:CalculadoraPapeleria>"
+        COMMENT "Re-firmando bundle (ad-hoc) para enlazar Info.plist y Resources"
+    )
+endif()
+
 # ---------------------------------------------------------------------------
 # Deployment — qt_generate_deploy_app_script (Qt 6.3+)
 #

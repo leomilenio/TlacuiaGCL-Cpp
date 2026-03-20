@@ -19,10 +19,14 @@ int main(int argc, char* argv[]) {
     app.setApplicationVersion("0.5.0");
 
 #ifdef Q_OS_WIN
+    // En Windows el icono no se hereda del ejecutable automaticamente
     app.setWindowIcon(QIcon(":/icons/icon.ico"));
-#else
-    app.setWindowIcon(QIcon(":/icons/icon.icns"));
 #endif
+    // En macOS el icono lo toma Qt directamente de NSApplication, que a su vez
+    // lo lee del bundle (CFBundleIconFile = "icon" → Resources/icon.icns).
+    // Llamar setWindowIcon con un QIcon cargado desde recursos puede producir
+    // un icono nulo (los .icns modernos usan compresion que Qt no siempre decodifica)
+    // y ese icono nulo sobreescribe el del bundle, causando el placeholder generico.
 
     // Cargar hoja de estilos Tlacuia
     QFile styleFile(":/styles/tlacuia.qss");

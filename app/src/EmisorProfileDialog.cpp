@@ -1,5 +1,8 @@
 #include "app/EmisorProfileDialog.h"
 #include "app/EmisorPdfExporter.h"
+#include "app/CortePdfExporter.h"
+#include "core/FolioRepository.h"
+#include "core/LibreriaConfigRepository.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
@@ -141,7 +144,7 @@ void EmisorProfileDialog::buildResumenHeader(QLayout* parent) {
 
     auto addCell = [&](int row, int col, const QString& lbl, const QString& val) {
         auto* l = new QLabel(lbl);
-        l->setStyleSheet("color: #777; font-size: 10pt;");
+        l->setStyleSheet("color: palette(placeholder-text); font-size: 10pt;");
         auto* v = new QLabel(QString("<b>%1</b>").arg(val));
         grid->addWidget(l, row * 2,     col);
         grid->addWidget(v, row * 2 + 1, col);
@@ -177,7 +180,7 @@ void EmisorProfileDialog::buildTabActivas() {
     if (m_activas.isEmpty()) {
         auto* lbl = new QLabel("Este distribuidor no tiene concesiones activas.");
         lbl->setAlignment(Qt::AlignCenter);
-        lbl->setStyleSheet("color: #777; font-style: italic;");
+        lbl->setStyleSheet("color: palette(placeholder-text); font-style: italic;");
         layout->addWidget(lbl);
         m_tabs->addTab(w, "Concesiones Activas (0)");
         return;
@@ -203,6 +206,12 @@ void EmisorProfileDialog::buildTabActivas() {
     table->verticalHeader()->setVisible(false);
     table->setToolTip("Doble clic en una fila para navegar a esa concesión");
 
+    const bool darkA = palette().color(QPalette::Window).lightness() < 128;
+    const QColor cRojoA   = darkA ? QColor("#EF9A9A") : QColor("#D32F2F");
+    const QColor cNaranjaA = darkA ? QColor("#FF8A65") : QColor("#E65100");
+    const QColor cVerdeA  = darkA ? QColor("#81C784") : QColor("#2E7D32");
+    const QString barBorderA = darkA ? "#555" : "#ccc";
+
     for (int i = 0; i < m_activas.size(); ++i) {
         const auto& c = m_activas[i];
         const auto& corte = m_activasCortes[i];
@@ -221,9 +230,9 @@ void EmisorProfileDialog::buildTabActivas() {
         // Días restantes — semáforo de color
         QString diasStr = dias >= 0 ? QString::number(dias) : QString("Vencida (%1)").arg(dias);
         auto* itemDias = mkCentered(diasStr);
-        if      (dias < 0)   colorItem(itemDias, QColor("#D32F2F"));
-        else if (dias <= 14) colorItem(itemDias, QColor("#E65100"));
-        else                 colorItem(itemDias, QColor("#2E7D32"));
+        if      (dias < 0)   colorItem(itemDias, cRojoA);
+        else if (dias <= 14) colorItem(itemDias, cNaranjaA);
+        else                 colorItem(itemDias, cVerdeA);
         table->setItem(i, CA_Dias, itemDias);
 
         table->setItem(i, CA_Productos, mkCentered(QString::number(corte.cantidadRegistros)));
@@ -238,9 +247,9 @@ void EmisorProfileDialog::buildTabActivas() {
         }
         auto* itemEstado = mkCentered(estadoStr);
         if (c.status() == Calculadora::ConcesionStatus::Vencida)
-            colorItem(itemEstado, QColor("#D32F2F"));
+            colorItem(itemEstado, cRojoA);
         else if (c.status() == Calculadora::ConcesionStatus::VencePronto)
-            colorItem(itemEstado, QColor("#E65100"));
+            colorItem(itemEstado, cNaranjaA);
         table->setItem(i, CA_Estado, itemEstado);
 
         // Barra de progreso
@@ -259,7 +268,10 @@ void EmisorProfileDialog::buildTabActivas() {
         bar->setValue(pct);
         bar->setTextVisible(false);
         QString barColor = pct < 60 ? "#4CAF50" : pct < 85 ? "#FF9800" : "#F44336";
-        bar->setStyleSheet(QString("QProgressBar::chunk{background:%1;}QProgressBar{border:1px solid #ccc;border-radius:3px;}").arg(barColor));
+        bar->setStyleSheet(QString(
+            "QProgressBar::chunk{background:%1;}"
+            "QProgressBar{border:1px solid %2;border-radius:3px;}")
+            .arg(barColor, barBorderA));
         table->setCellWidget(i, CA_Progreso, bar);
         table->setRowHeight(i, 28);
     }
@@ -286,22 +298,28 @@ void EmisorProfileDialog::buildTabHistorial() {
     if (m_finalizadas.isEmpty()) {
         auto* lbl = new QLabel("Este distribuidor no tiene concesiones finalizadas.");
         lbl->setAlignment(Qt::AlignCenter);
-        lbl->setStyleSheet("color: #777; font-style: italic;");
+        lbl->setStyleSheet("color: palette(placeholder-text); font-style: italic;");
         layout->addWidget(lbl);
         m_tabs->addTab(w, "Historial de Cortes (0)");
         return;
     }
 
+    const bool darkH = palette().color(QPalette::Window).lightness() < 128;
+    const QColor cRojoH   = darkH ? QColor("#EF9A9A") : QColor("#D32F2F");
+    const QColor cNaranjaH = darkH ? QColor("#FF8A65") : QColor("#E65100");
+    const QColor cVerdeH  = darkH ? QColor("#81C784") : QColor("#2E7D32");
+    const QColor cTotBg   = darkH ? QColor("#1E3A5F") : QColor("#E3F2FD");
+
     QLocale loc;
     auto fmt = [&](double v) { return loc.toCurrencyString(v); };
 
     enum ColH { CH_Folio=0, CH_Fecha, CH_Recibidas, CH_Vendidas, CH_Devueltas,
-                CH_Ingresado, CH_Devuelto, CH_PctDev };
+                CH_Ingresado, CH_Devuelto, CH_PctDev, CH_Acciones };
 
     int rows = m_finalizadas.size() + 1; // +1 para fila de totales
-    auto* table = new QTableWidget(rows, 8, w);
+    auto* table = new QTableWidget(rows, 9, w);
     table->setHorizontalHeaderLabels({"Folio", "Fecha Cierre", "Recibidas", "Vendidas",
-                                      "Devueltas", "Total Ingresado", "Total Devuelto ($)", "% Dev."});
+                                      "Devueltas", "Total Ingresado", "Total Devuelto ($)", "% Dev.", "Acciones"});
     table->horizontalHeader()->setStretchLastSection(false);
     table->horizontalHeader()->setSectionResizeMode(CH_Folio,     QHeaderView::ResizeToContents);
     table->horizontalHeader()->setSectionResizeMode(CH_Fecha,     QHeaderView::ResizeToContents);
@@ -311,6 +329,7 @@ void EmisorProfileDialog::buildTabHistorial() {
     table->horizontalHeader()->setSectionResizeMode(CH_Ingresado, QHeaderView::Stretch);
     table->horizontalHeader()->setSectionResizeMode(CH_Devuelto,  QHeaderView::Stretch);
     table->horizontalHeader()->setSectionResizeMode(CH_PctDev,    QHeaderView::ResizeToContents);
+    table->horizontalHeader()->setSectionResizeMode(CH_Acciones,  QHeaderView::ResizeToContents);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -349,21 +368,51 @@ void EmisorProfileDialog::buildTabHistorial() {
 
         QString pctStr = QString("%1%").arg(pctDev, 0, 'f', 1);
         auto* itemPct = mkCentered(pctStr);
-        if      (pctDev < 20) colorItem(itemPct, QColor("#2E7D32"));
-        else if (pctDev < 50) colorItem(itemPct, QColor("#E65100"));
-        else                  colorItem(itemPct, QColor("#D32F2F"));
+        if      (pctDev < 20) colorItem(itemPct, cVerdeH);
+        else if (pctDev < 50) colorItem(itemPct, cNaranjaH);
+        else                  colorItem(itemPct, cRojoH);
         table->setItem(i, CH_PctDev, itemPct);
-        table->setRowHeight(i, 24);
+
+        // Botón Imprimir — genera PDF del corte de esta concesión
+        auto* btnImprimir = new QPushButton("Imprimir");
+        btnImprimir->setFixedHeight(22);
+        const int idx = i;
+        connect(btnImprimir, &QPushButton::clicked, this, [this, idx]() {
+            const auto& conc = m_finalizadas[idx];
+            const QString folio = conc.folio.isEmpty() ? "sin_folio" : conc.folio;
+            const QString defaultName = QString("Corte_%1_%2.pdf")
+                .arg(folio, QDate::currentDate().toString("yyyy-MM-dd"));
+            const bool inclFirmas = QMessageBox::question(
+                this, "Sección de firmas",
+                "¿Desea incluir la sección de firmas en el PDF?",
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
+
+            const QString path = QFileDialog::getSaveFileName(
+                this, "Guardar PDF del corte", defaultName, "PDF (*.pdf)");
+            if (path.isEmpty()) return;
+            const auto productos = m_productoRepo.findByConcesion(conc.id);
+            Calculadora::LibreriaConfigRepository cfgRepo(m_concesionRepo.database());
+            Calculadora::FolioRepository          folioRepo(m_concesionRepo.database());
+            const auto    config   = cfgRepo.load();
+            const QString folioDoc = folioRepo.getFolioCorte(conc.id, conc.tipoDocumento);
+            const bool ok = CortePdfExporter::exportar(conc, productos, m_cortes[idx], config, folioDoc, path, inclFirmas);
+            if (ok)
+                QMessageBox::information(this, "PDF generado",
+                    QString("Corte guardado en:\n%1").arg(path));
+            else
+                QMessageBox::critical(this, "Error", "No se pudo generar el PDF.");
+        });
+        table->setCellWidget(i, CH_Acciones, btnImprimir);
+        table->setRowHeight(i, 30);
     }
 
     // Fila de totales
     int last = m_finalizadas.size();
     double pctDevTotal = (sumRec > 0) ? sumDev * 100.0 / sumRec : 0.0;
-    QColor totBg("#E3F2FD");
     auto addTotal = [&](int col, const QString& text, Qt::Alignment align = Qt::AlignCenter) {
         auto* item = mkItem(text, align);
         QFont bold = item->font(); bold.setBold(true); item->setFont(bold);
-        item->setBackground(totBg);
+        item->setBackground(cTotBg);
         table->setItem(last, col, item);
     };
     addTotal(CH_Folio,     "TOTALES");
@@ -374,7 +423,8 @@ void EmisorProfileDialog::buildTabHistorial() {
     addTotal(CH_Ingresado, fmt(sumIng),    Qt::AlignRight | Qt::AlignVCenter);
     addTotal(CH_Devuelto,  fmt(sumDevVal), Qt::AlignRight | Qt::AlignVCenter);
     addTotal(CH_PctDev,    QString("%1%").arg(pctDevTotal, 0, 'f', 1));
-    table->setRowHeight(last, 26);
+    addTotal(CH_Acciones,  "");  // sin botón en la fila de totales
+    table->setRowHeight(last, 30);
 
     layout->addWidget(table);
     m_tabs->addTab(w, QString("Historial de Cortes (%1)").arg(m_finalizadas.size()));
@@ -420,7 +470,7 @@ void EmisorProfileDialog::buildTabReporte() {
         int row = i / 2;
         int col = (i % 2) * 2;
         auto* lbl = new QLabel(metrics[i].label);
-        lbl->setStyleSheet("color: #555; font-size: 10pt;");
+        lbl->setStyleSheet("color: palette(placeholder-text); font-size: 10pt;");
         auto* val = new QLabel(QString("<b>%1</b>").arg(metrics[i].value));
         QFont vf = val->font(); vf.setPointSize(vf.pointSize() + 1); val->setFont(vf);
         grid->addWidget(lbl, row * 2,     col);
@@ -459,13 +509,15 @@ void EmisorProfileDialog::buildTabReporte() {
             barTable->setItem(i, 0, mkItem(c.folio.isEmpty() ? "(Sin folio)" : c.folio));
             barTable->setItem(i, 1, mkItem(loc.toCurrencyString(ing), Qt::AlignRight | Qt::AlignVCenter));
 
+            const bool darkR = palette().color(QPalette::Window).lightness() < 128;
+            const QString barBorderR = darkR ? "#555" : "#ccc";
             auto* bar = new QProgressBar();
             bar->setRange(0, 100);
             bar->setValue(barPct);
             bar->setFormat(QString("%1%").arg(barPct));
-            bar->setStyleSheet(
-                "QProgressBar{border:1px solid #ccc;border-radius:3px;text-align:center;}"
-                "QProgressBar::chunk{background:#4CAF50;}");
+            bar->setStyleSheet(QString(
+                "QProgressBar{border:1px solid %1;border-radius:3px;text-align:center;}"
+                "QProgressBar::chunk{background:#4CAF50;}").arg(barBorderR));
             barTable->setCellWidget(i, 2, bar);
 
             barTable->setItem(i, 3, mkItem(loc.toCurrencyString(dev), Qt::AlignRight | Qt::AlignVCenter));
@@ -488,14 +540,24 @@ void EmisorProfileDialog::onExportarPdfClicked() {
     nombre.replace(' ', '_');
     QString defaultName = QString("Reporte_%1_%2.pdf").arg(nombre, fecha);
 
+    const bool includeFirmas = QMessageBox::question(
+        this, "Sección de firmas",
+        "¿Desea incluir la sección de firmas en el PDF?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
+
     QString path = QFileDialog::getSaveFileName(
         this, "Guardar reporte PDF", defaultName, "PDF (*.pdf)");
     if (path.isEmpty()) return;
 
     const auto resumen = m_productoRepo.calcularResumenEmisor(m_emisor.id);
 
+    Calculadora::LibreriaConfigRepository cfgRepo(m_concesionRepo.database());
+    Calculadora::FolioRepository          folioRepo(m_concesionRepo.database());
+    const auto    config   = cfgRepo.load();
+    const QString folioRI  = folioRepo.generarFolioRI();
+
     bool ok = EmisorPdfExporter::exportar(
-        m_emisor, m_activas, m_finalizadas, m_cortes, resumen, path);
+        m_emisor, m_activas, m_finalizadas, m_cortes, resumen, config, folioRI, path, includeFirmas);
 
     if (ok)
         QMessageBox::information(this, "PDF generado",
