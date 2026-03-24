@@ -51,13 +51,19 @@ QString buildHeaderHtml(const Calculadora::LibreriaConfig& config,
     QString logosHtml = logo1 + ((!logo1.isEmpty() && !logo2.isEmpty()) ? "&nbsp;" : "") + logo2;
     if (logosHtml.isEmpty()) logosHtml = "<span style='font-size:9pt;color:#bbb;'>(Sin logo)</span>";
 
-    // RFC + régimen fiscal en la misma celda
-    QString rfcCell = esc(config.rfc);
+    // Nombre empresa (razón social, o librería si iguales)
+    QString empresaLine = (!config.empresaNombre.isEmpty() && config.empresaNombre != config.libreriaNombre)
+                          ? esc(config.empresaNombre) : esc(config.libreriaNombre);
+
+    // RFC (solo el número, sin régimen)
+    const QString rfcHtml = esc(config.rfc);
+
+    // Régimen fiscal como fila independiente (opcional)
+    QString regimenRow;
     if (!config.regimenFiscalCode.isEmpty()) {
-        if (!rfcCell.isEmpty()) rfcCell += " &nbsp;&nbsp; ";
-        rfcCell += "<span style='color:#555;'>REG. FIS. "
-                 + esc(config.regimenFiscalCode) + " \u2013 " + esc(config.regimenFiscalDesc)
-                 + "</span>";
+        regimenRow = QString("<tr><td class=\"info-lbl\" style=\"white-space:nowrap;\">R&eacute;gimen:</td>"
+                             "<td>%1 &ndash; %2</td></tr>\n")
+                     .arg(esc(config.regimenFiscalCode), esc(config.regimenFiscalDesc));
     }
 
     // Fila de dirección (solo si hay datos)
@@ -75,7 +81,7 @@ QString buildHeaderHtml(const Calculadora::LibreriaConfig& config,
         if (!config.dirMunicipio.isEmpty())    partes << esc(config.dirMunicipio);
         if (!config.dirEstado.isEmpty())       partes << esc(config.dirEstado);
         if (!partes.isEmpty())
-            dirHtml = QString("<tr><td colspan=\"4\" style=\"font-size:8pt; color:#444;\">%1</td></tr>\n")
+            dirHtml = QString("<tr><td colspan=\"2\" style=\"font-size:8pt; color:#444;\">%1</td></tr>\n")
                       .arg(partes.join(",&nbsp; "));
     }
 
@@ -91,14 +97,10 @@ QString buildHeaderHtml(const Calculadora::LibreriaConfig& config,
     QString extraContactHtml;
     if (!telStr.isEmpty())
         extraContactHtml += QString("<tr><td class=\"info-lbl\">Tel:</td>"
-                                    "<td colspan=\"3\">%1</td></tr>\n").arg(telStr);
+                                    "<td>%1</td></tr>\n").arg(telStr);
     if (!config.email.isEmpty())
         extraContactHtml += QString("<tr><td class=\"info-lbl\">Email:</td>"
-                                    "<td colspan=\"3\">%1</td></tr>\n").arg(esc(config.email));
-
-    // Nombre empresa (razón social, o librería si iguales)
-    QString empresaLine = (!config.empresaNombre.isEmpty() && config.empresaNombre != config.libreriaNombre)
-                          ? esc(config.empresaNombre) : esc(config.libreriaNombre);
+                                    "<td>%1</td></tr>\n").arg(esc(config.email));
 
     return QString(R"(
 <table class="hdr-main" cellpadding="0" cellspacing="0">
@@ -112,19 +114,24 @@ QString buildHeaderHtml(const Calculadora::LibreriaConfig& config,
         <div class="libreria-name">%2</div>
         <table class="info-tbl" cellpadding="0" cellspacing="0">
           <tr>
-            <td class="info-lbl">Empresa:</td><td style="padding-right:16px;">%3</td>
-            <td class="info-lbl">RFC:</td><td>%4</td>
+            <td class="info-lbl" style="white-space:nowrap;">Empresa:</td>
+            <td>%3</td>
+          </tr>
+          <tr>
+            <td class="info-lbl">RFC:</td>
+            <td>%4</td>
           </tr>
           %5
           %6
+          %7
         </table>
       </td>
-      <td style="width:145px; vertical-align:middle; text-align:right;">
-        <table class="folio-box" cellpadding="0" cellspacing="0" style="margin-left:auto;">
+      <td style="width:165px; vertical-align:middle; text-align:right;">
+        <table class="folio-box" cellpadding="0" cellspacing="0" style="width:100%;">
           <tr><td class="folio-hdr">FOLIO</td></tr>
-          <tr><td class="folio-val">%7</td></tr>
+          <tr><td class="folio-val">%8</td></tr>
         </table>
-        <div class="fecha-lbl">%8</div>
+        <div class="fecha-lbl">%9</div>
       </td>
     </tr></table>
   </td>
@@ -132,8 +139,8 @@ QString buildHeaderHtml(const Calculadora::LibreriaConfig& config,
 </table>
 )").arg(logosHtml,
         esc(config.libreriaNombre.isEmpty() ? "Librería" : config.libreriaNombre),
-        empresaLine, rfcCell,
-        dirHtml, extraContactHtml,
+        empresaLine, rfcHtml,
+        regimenRow, dirHtml, extraContactHtml,
         esc(folioLabel), esc(fecha));
 }
 
