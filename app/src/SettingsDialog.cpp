@@ -4,10 +4,12 @@
 #include <QLineEdit>
 #include <QLabel>
 #include <QPushButton>
+#include <QComboBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QScrollArea>
 #include <QFileDialog>
 #include <QFile>
 #include <QFileInfo>
@@ -32,7 +34,6 @@ namespace App {
 // Utilidades de hash y verificacion de schema (funciones libres de modulo)
 // ===========================================================================
 
-// Calcula SHA-256 de un archivo en bloques (eficiente para archivos grandes).
 static QByteArray computeSha256(const QString& path) {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return {};
@@ -43,34 +44,26 @@ static QByteArray computeSha256(const QString& path) {
     return hasher.result();
 }
 
-// Guarda un archivo .sha256 en formato estandar compatible con sha256sum(1):
-//   <64-hex>  <nombre_archivo>\n
 static bool guardarHashFile(const QString& hashFilePath,
                             const QByteArray& hash,
                             const QString& dbFileName) {
     QFile hf(hashFilePath);
     if (!hf.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
     QTextStream ts(&hf);
-    // Encoding UTF-8 explícito: garantiza que nombres con caracteres no-ASCII
-    // (ej: tildes en rutas de Windows) se escriban correctamente en todas las plataformas.
     ts.setEncoding(QStringConverter::Utf8);
     ts << QString::fromLatin1(hash.toHex()) << "  " << dbFileName << "\n";
     return true;
 }
 
-// Lee el hash desde un archivo .sha256 (primer token de la primera linea).
 static QString leerHashDesdeArchivo(const QString& sha256Path) {
     QFile hf(sha256Path);
     if (!hf.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
     QTextStream ts(&hf);
     ts.setEncoding(QStringConverter::Utf8);
     const QString linea = ts.readLine().trimmed();
-    // Formato: "<hash>  <filename>" — tomamos solo el primer campo
     return linea.split(QRegularExpression("\\s+")).value(0).toLower();
 }
 
-// Abre una conexion SQLite temporal (solo lectura) para leer PRAGMA user_version.
-// Devuelve -1 si no se puede abrir.
 static int leerSchemaVersion(const QString& dbPath) {
     int version = -1;
     const QString connName = "verify_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -84,9 +77,42 @@ static int leerSchemaVersion(const QString& dbPath) {
             tempDb.close();
         }
     }
-    QSqlDatabase::removeDatabase(connName); // safe: el objeto tempDb ya fue destruido
+    QSqlDatabase::removeDatabase(connName);
     return version;
 }
+
+// Catalogo completo c_RegimenFiscal del SAT (CFDI 4.0)
+// Formato: "codigo – descripcion"
+static const QStringList kRegimenesFiscales = {
+    "— Sin especificar —",
+    "601 – General de Ley Personas Morales",
+    "603 – Personas Morales con Fines no Lucrativos",
+    "605 – Sueldos y Salarios e Ingresos Asimilados a Salarios",
+    "606 – Arrendamiento",
+    "607 – Enajenación de Bienes",
+    "608 – Demás ingresos",
+    "609 – Consolidación",
+    "610 – Residentes en el Extranjero sin Establecimiento Permanente en México",
+    "611 – Ingresos por Dividendos (socios y accionistas)",
+    "612 – Personas Físicas con Actividades Empresariales y Profesionales",
+    "614 – Ingresos por intereses",
+    "615 – Régimen de los ingresos por obtención de premios",
+    "616 – Sin obligaciones fiscales",
+    "620 – Sociedades Cooperativas de Producción que optan por diferir sus ingresos",
+    "621 – Incorporación Fiscal",
+    "622 – Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras",
+    "623 – Opcional para Grupos de Sociedades",
+    "624 – Coordinados",
+    "625 – Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas",
+    "626 – Régimen Simplificado de Confianza (RESICO)",
+    "628 – Hidrocarburos",
+    "629 – De los Regímenes Fiscales Preferentes y de las Empresas Multinacionales",
+    "630 – Enajenación de acciones en bolsa de valores",
+};
+
+static const QStringList kTiposTelefono = {
+    "WhatsApp", "Local", "Celular", "Oficina", "Fax", "Otro"
+};
 
 // ===========================================================================
 // Constructor
@@ -100,7 +126,7 @@ SettingsDialog::SettingsDialog(Calculadora::LibreriaConfigRepository& configRepo
     , m_dbManager(dbManager)
 {
     setWindowTitle("Preferencias");
-    setMinimumSize(580, 500);
+    setMinimumSize(620, 560);
     setupUi();
     loadFromRepo();
 }
@@ -119,6 +145,10 @@ void SettingsDialog::setupUi() {
     auto* tabDatos = new QWidget();
     buildTabDatos(tabDatos);
     m_tabs->addTab(tabDatos, "Datos de la Librería");
+
+    auto* tabDocs = new QWidget();
+    buildTabDocumentos(tabDocs);
+    m_tabs->addTab(tabDocs, "Documentos");
 
     auto* tabDB = new QWidget();
     buildTabBaseDatos(tabDB);
@@ -145,18 +175,33 @@ void SettingsDialog::setupUi() {
 // ===========================================================================
 
 void SettingsDialog::buildTabDatos(QWidget* tab) {
-    auto* layout = new QVBoxLayout(tab);
+    // Usamos QScrollArea para que el contenido no quede comprimido si el
+    // dialogo es pequeño (ej: pantallas con escalado alto).
+    auto* scroll = new QScrollArea(tab);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto* tabLayout = new QVBoxLayout(tab);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
+    tabLayout->addWidget(scroll);
+
+    auto* inner  = new QWidget();
+    auto* layout = new QVBoxLayout(inner);
     layout->setContentsMargins(16, 16, 16, 8);
     layout->setSpacing(16);
+    scroll->setWidget(inner);
 
+    // ---- Informacion General ----
     auto* grpInfo = new QGroupBox("Información General");
-    auto* form = new QFormLayout(grpInfo);
+    auto* form    = new QFormLayout(grpInfo);
     form->setLabelAlignment(Qt::AlignRight);
     form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    form->setSpacing(8);
 
     m_txtLibreria = new QLineEdit();
     m_txtLibreria->setPlaceholderText("Nombre que aparece en encabezados de PDF");
-    m_txtEmpresa  = new QLineEdit();
+
+    m_txtEmpresa = new QLineEdit();
     m_txtEmpresa->setPlaceholderText("Razón social (si difiere del nombre de librería)");
 
     m_txtRFC = new QLineEdit();
@@ -165,21 +210,117 @@ void SettingsDialog::buildTabDatos(QWidget* tab) {
     m_txtRFC->setValidator(new QRegularExpressionValidator(
         QRegularExpression("[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}"), this));
 
-    m_txtTel1 = new QLineEdit();
-    m_txtTel1->setPlaceholderText("Ej: 55 1234 5678");
-    m_txtTel2 = new QLineEdit();
-    m_txtTel2->setPlaceholderText("Teléfono alternativo (opcional)");
+    m_cmbRegimen = new QComboBox();
+    m_cmbRegimen->addItems(kRegimenesFiscales);
+    m_cmbRegimen->setToolTip("Catálogo c_RegimenFiscal del SAT (CFDI 4.0)");
+    // Sin este ajuste, el combo calcula su minimumSizeHint para mostrar el item
+    // más largo ("625 – Régimen de las Actividades Empresariales..."), lo que
+    // hace que el QFormLayout exija más ancho que el dialogo. Con AdjustToMinimum
+    // el combo puede achicarse y se estira via ExpandingFieldsGrow hasta llenar
+    // el ancho disponible, mostrando el texto truncado con "…" cuando es necesario.
+    m_cmbRegimen->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_cmbRegimen->setMinimumContentsLength(10);
+
+    m_txtEmail = new QLineEdit();
+    m_txtEmail->setPlaceholderText("Ej: contacto@libreria.com.mx");
+
+    m_txtContacto = new QLineEdit();
+    m_txtContacto->setPlaceholderText("Ej: Nombre del contacto de la librería");
 
     form->addRow("Nombre de la librería *:", m_txtLibreria);
     form->addRow("Razón social / empresa:",  m_txtEmpresa);
     form->addRow("RFC:",                     m_txtRFC);
-    form->addRow("Teléfono 1:",              m_txtTel1);
-    form->addRow("Teléfono 2:",              m_txtTel2);
+    form->addRow("Régimen fiscal (SAT):",    m_cmbRegimen);
+    form->addRow("Correo electrónico:",      m_txtEmail);
+    form->addRow("Nombre del contacto:",     m_txtContacto);
     layout->addWidget(grpInfo);
 
-    auto* grpLogos = new QGroupBox("Identidad Visual");
-    auto* logosLayout = new QHBoxLayout(grpLogos);
-    logosLayout->setSpacing(24);
+    // ---- Dirección de la Librería ----
+    auto* grpDir  = new QGroupBox("Dirección de la Librería");
+    auto* formDir = new QFormLayout(grpDir);
+    formDir->setLabelAlignment(Qt::AlignRight);
+    formDir->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    formDir->setSpacing(8);
+
+    m_txtDirCalle = new QLineEdit();
+    m_txtDirCalle->setPlaceholderText("Ej: Av. Insurgentes Sur");
+
+    // Número exterior e interior en una misma fila
+    m_txtDirNumExt = new QLineEdit();
+    m_txtDirNumExt->setPlaceholderText("Ej: 1234");
+    m_txtDirNumInt = new QLineEdit();
+    m_txtDirNumInt->setPlaceholderText("Opcional (Ej: A, 2B)");
+    auto* numRow    = new QWidget();
+    auto* numRowLay = new QHBoxLayout(numRow);
+    numRowLay->setContentsMargins(0, 0, 0, 0);
+    numRowLay->setSpacing(8);
+    numRowLay->addWidget(m_txtDirNumExt, 1);
+    auto* lblInt = new QLabel("Int.:");
+    lblInt->setStyleSheet("color: palette(placeholderText); font-size: 9pt;");
+    numRowLay->addWidget(lblInt);
+    numRowLay->addWidget(m_txtDirNumInt, 1);
+
+    m_txtDirCP = new QLineEdit();
+    m_txtDirCP->setPlaceholderText("Ej: 06600");
+    m_txtDirCP->setMaxLength(5);
+    m_txtDirCP->setValidator(new QRegularExpressionValidator(
+        QRegularExpression("[0-9]{0,5}"), this));
+
+    m_txtDirColonia = new QLineEdit();
+    m_txtDirColonia->setPlaceholderText("Ej: Nápoles");
+
+    m_txtDirMunicipio = new QLineEdit();
+    m_txtDirMunicipio->setPlaceholderText("Ej: Benito Juárez");
+
+    static const QStringList kEstados = {
+        "— Sin especificar —",
+        "Aguascalientes", "Baja California", "Baja California Sur",
+        "Campeche", "Chiapas", "Chihuahua", "Ciudad de México",
+        "Coahuila de Zaragoza", "Colima", "Durango", "Estado de México",
+        "Guanajuato", "Guerrero", "Hidalgo", "Jalisco", "Michoacán de Ocampo",
+        "Morelos", "Nayarit", "Nuevo León", "Oaxaca", "Puebla",
+        "Querétaro", "Quintana Roo", "San Luis Potosí", "Sinaloa",
+        "Sonora", "Tabasco", "Tamaulipas", "Tlaxcala",
+        "Veracruz de Ignacio de la Llave", "Yucatán", "Zacatecas",
+    };
+    m_cmbDirEstado = new QComboBox();
+    m_cmbDirEstado->addItems(kEstados);
+    m_cmbDirEstado->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_cmbDirEstado->setMinimumContentsLength(10);
+
+    formDir->addRow("Calle:",                m_txtDirCalle);
+    formDir->addRow("Número exterior:",      numRow);
+    formDir->addRow("Código postal:",        m_txtDirCP);
+    formDir->addRow("Colonia:",              m_txtDirColonia);
+    formDir->addRow("Municipio / Alcaldía:", m_txtDirMunicipio);
+    formDir->addRow("Estado:",               m_cmbDirEstado);
+    layout->addWidget(grpDir);
+
+    // ---- Telefonos de contacto ----
+    auto* grpTel   = new QGroupBox("Teléfonos de Contacto");
+    auto* telOuter = new QVBoxLayout(grpTel);
+    telOuter->setSpacing(6);
+
+    auto* telHint = new QLabel("Agrega hasta 4 números. Cada uno puede tener un tipo distinto.");
+    telHint->setStyleSheet("color: palette(placeholderText); font-size: 9pt;");
+    telOuter->addWidget(telHint);
+
+    m_telContainer = new QWidget();
+    m_telLayout    = new QVBoxLayout(m_telContainer);
+    m_telLayout->setContentsMargins(0, 0, 0, 0);
+    m_telLayout->setSpacing(4);
+    telOuter->addWidget(m_telContainer);
+
+    m_btnAddTel = new QPushButton("+ Agregar teléfono");
+    m_btnAddTel->setFixedWidth(160);
+    connect(m_btnAddTel, &QPushButton::clicked, this, [this]{ addTelRow(); });
+    telOuter->addWidget(m_btnAddTel, 0, Qt::AlignLeft);
+    layout->addWidget(grpTel);
+
+    // ---- Identidad Visual ----
+    auto* grpLogos  = new QGroupBox("Identidad Visual");
+    auto* logosLay  = new QHBoxLayout(grpLogos);
+    logosLay->setSpacing(24);
 
     auto makeLogoBlock = [&](const QString& label,
                               QLabel*& preview,
@@ -210,7 +351,7 @@ void SettingsDialog::buildTabDatos(QWidget* tab) {
         vl->addLayout(btnRow2);
 
         auto* hint = new QLabel("PNG o JPEG, máx. 2 MB");
-        hint->setStyleSheet("color: palette(mid); font-size:9pt;");
+        hint->setStyleSheet("color: palette(placeholderText); font-size:9pt;");
         vl->addWidget(hint);
         vl->addStretch();
 
@@ -226,19 +367,210 @@ void SettingsDialog::buildTabDatos(QWidget* tab) {
         [this]{ onSeleccionarLogoEmpresa(); },
         [this]{ onQuitarLogoEmpresa(); });
 
-    logosLayout->addWidget(blkLib);
+    logosLay->addWidget(blkLib);
     auto* vsep = new QFrame();
     vsep->setFrameShape(QFrame::VLine);
     vsep->setFrameShadow(QFrame::Sunken);
-    logosLayout->addWidget(vsep);
-    logosLayout->addWidget(blkEmp);
-    logosLayout->addStretch();
+    logosLay->addWidget(vsep);
+    logosLay->addWidget(blkEmp);
+    logosLay->addStretch();
     layout->addWidget(grpLogos);
     layout->addStretch();
 }
 
 // ===========================================================================
-// Tab 2 — Base de Datos
+// Helpers — telefonos dinamicos
+// ===========================================================================
+
+void SettingsDialog::addTelRow(const QString& tipo, const QString& numero) {
+    if (m_telRows.size() >= MAX_TELEFONOS) return;
+
+    auto* rowWidget = new QWidget();
+    auto* hl = new QHBoxLayout(rowWidget);
+    hl->setContentsMargins(0, 0, 0, 0);
+    hl->setSpacing(6);
+
+    auto* cmbTipo = new QComboBox();
+    cmbTipo->addItems(kTiposTelefono);
+    cmbTipo->setFixedWidth(110);
+    if (!tipo.isEmpty()) cmbTipo->setCurrentText(tipo);
+    else                 cmbTipo->setCurrentText("Local");
+
+    auto* txtNum = new QLineEdit();
+    txtNum->setPlaceholderText("Ej: 55 1234 5678");
+    if (!numero.isEmpty()) txtNum->setText(numero);
+
+    auto* btnRemove = new QPushButton("✕");
+    btnRemove->setFixedSize(24, 24);
+    btnRemove->setToolTip("Quitar este teléfono");
+
+    hl->addWidget(cmbTipo);
+    hl->addWidget(txtNum, 1);
+    hl->addWidget(btnRemove);
+
+    m_telRows.append({ rowWidget, cmbTipo, txtNum });
+    m_telLayout->addWidget(rowWidget);
+    m_btnAddTel->setEnabled(m_telRows.size() < MAX_TELEFONOS);
+
+    connect(btnRemove, &QPushButton::clicked, this, [this, rowWidget, cmbTipo]() {
+        for (int i = 0; i < m_telRows.size(); ++i) {
+            if (m_telRows[i].tipo == cmbTipo) {
+                m_telRows.removeAt(i);
+                break;
+            }
+        }
+        rowWidget->deleteLater();
+        m_btnAddTel->setEnabled(m_telRows.size() < MAX_TELEFONOS);
+    });
+}
+
+// ===========================================================================
+// Tab 2 — Documentos (propuesta / placeholder)
+// ===========================================================================
+
+void SettingsDialog::buildTabDocumentos(QWidget* tab) {
+    // QScrollArea para consistencia con buildTabDatos y pantallas con escala alta
+    auto* scroll = new QScrollArea(tab);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto* tabLayout = new QVBoxLayout(tab);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
+    tabLayout->addWidget(scroll);
+
+    auto* inner  = new QWidget();
+    auto* layout = new QVBoxLayout(inner);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(16);
+    scroll->setWidget(inner);
+
+    // ---- Descripcion general ----
+    auto* lblDesc = new QLabel(
+        "Todos los documentos generados por TlacuiaGCL incluyen automáticamente "
+        "la información de la librería configurada en la pestaña <b>Datos de la Librería</b>. "
+        "En esta sección podrás personalizar su presentación.");
+    lblDesc->setWordWrap(true);
+    layout->addWidget(lblDesc);
+
+    // ---- Datos incluidos automaticamente ----
+    // QGridLayout de 2 columnas para alineacion real independiente de la fuente
+    auto* grpDatos = new QGroupBox("Datos incluidos en todos los documentos");
+    auto* datosLay = new QVBoxLayout(grpDatos);
+    datosLay->setContentsMargins(12, 8, 12, 12);
+    datosLay->setSpacing(0);
+
+    struct ItemPair { QString izq; QString der; };
+    const QVector<ItemPair> pares = {
+        {"✓  Logo de la librería",     "✓  Logo de la empresa"},
+        {"✓  Nombre de la librería",   "✓  Razón social"},
+        {"✓  RFC",                     "✓  Régimen fiscal (SAT)"},
+        {"✓  Teléfonos de contacto",   "✓  Correo electrónico"},
+        {"✓  Número de folio",         "✓  Fecha de generación"},
+        {"✓  Nombre del distribuidor", "✓  Firmas (opcional al generar)"},
+    };
+    auto* itemGrid = new QGridLayout();
+    itemGrid->setVerticalSpacing(4);
+    itemGrid->setHorizontalSpacing(24);
+    itemGrid->setColumnStretch(0, 1);
+    itemGrid->setColumnStretch(1, 1);
+    for (int i = 0; i < pares.size(); ++i) {
+        auto* lIzq = new QLabel(pares[i].izq);
+        auto* lDer = new QLabel(pares[i].der);
+        // palette(text) se adapta automaticamente a modo oscuro y claro
+        lIzq->setStyleSheet("font-size: 9.5pt; color: palette(text);");
+        lDer->setStyleSheet("font-size: 9.5pt; color: palette(text);");
+        itemGrid->addWidget(lIzq, i, 0);
+        itemGrid->addWidget(lDer, i, 1);
+    }
+    datosLay->addLayout(itemGrid);
+    layout->addWidget(grpDatos);
+
+    // ---- Personalizacion (placeholder — proximo sprint) ----
+    auto* grpPersonal = new QGroupBox("Personalización de documentos");
+    auto* personalLay = new QVBoxLayout(grpPersonal);
+    personalLay->setSpacing(10);
+
+    auto* lblProx = new QLabel(
+        "La personalización de documentos estará disponible en una próxima versión. "
+        "Las opciones a continuación son una vista previa de las funciones planeadas.");
+    lblProx->setWordWrap(true);
+    lblProx->setStyleSheet("color: palette(mid); font-size: 9pt; font-style: italic;");
+    personalLay->addWidget(lblProx);
+
+    auto* form = new QFormLayout();
+    form->setLabelAlignment(Qt::AlignRight);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    form->setSpacing(8);
+
+    // Tamanio de papel
+    auto* cmbPapel = new QComboBox();
+    cmbPapel->addItems({"Carta (Letter, 8.5\" × 11\")", "Oficio (Legal, 8.5\" × 14\")", "A4 (210 × 297 mm)"});
+    cmbPapel->setEnabled(false);
+    form->addRow("Tamaño de papel:", cmbPapel);
+
+    // Orientacion
+    auto* cmbOrientacion = new QComboBox();
+    cmbOrientacion->addItems({"Vertical (Portrait)", "Horizontal (Landscape)"});
+    cmbOrientacion->setEnabled(false);
+    form->addRow("Orientación:", cmbOrientacion);
+
+    // Color primario — QLabel habilitado (no setEnabled(false)) para que el
+    // background #1a3a5c no quede oscurecido por el estado disabled en dark mode.
+    // El cursor de prohibicion comunica visualmente que no es interactivo.
+    auto* lblColor = new QWidget();
+    lblColor->setFixedHeight(26);
+    lblColor->setCursor(Qt::ForbiddenCursor);
+    auto* colorHl = new QHBoxLayout(lblColor);
+    colorHl->setContentsMargins(0, 0, 0, 0);
+    colorHl->setSpacing(8);
+    auto* swatchLabel = new QLabel();
+    swatchLabel->setFixedSize(18, 18);
+    swatchLabel->setStyleSheet(
+        "background: #1a3a5c; border-radius: 3px; border: 1px solid rgba(255,255,255,0.15);");
+    auto* colorText = new QLabel("#1a3a5c — Azul corporativo");
+    colorText->setStyleSheet("font-size: 9pt; color: palette(mid);");
+    colorHl->addWidget(swatchLabel);
+    colorHl->addWidget(colorText);
+    colorHl->addStretch();
+    form->addRow("Color primario:", lblColor);
+
+    // Fuente del cuerpo
+    auto* cmbFuente = new QComboBox();
+    cmbFuente->addItems({"Arial / Helvetica Neue", "Times New Roman", "Georgia"});
+    cmbFuente->setEnabled(false);
+    form->addRow("Fuente del cuerpo:", cmbFuente);
+
+    personalLay->addLayout(form);
+
+    // Separador
+    auto* hsep = new QFrame();
+    hsep->setFrameShape(QFrame::HLine);
+    hsep->setFrameShadow(QFrame::Sunken);
+    personalLay->addWidget(hsep);
+
+    // Pie de pagina — QLabel con borde imitando un campo de texto; mas legible
+    // que un QLineEdit deshabilitado en dark mode (que pierde contraste).
+    auto* lblPieDesc = new QLabel("El pie de página muestra el nombre del sistema, la versión y la numeración de páginas:");
+    lblPieDesc->setWordWrap(true);
+    lblPieDesc->setStyleSheet("font-size: 9pt;");
+    personalLay->addWidget(lblPieDesc);
+
+    auto* lblPieValor = new QLabel(
+        "TlacuiaGCL - Gestor de Concesiones para Librerías  |  Versión X.X.X  |  Pág. 1 de N");
+    lblPieValor->setStyleSheet(
+        "font-size: 9pt; font-style: italic; color: palette(mid); "
+        "background: palette(base); "
+        "border: 1px solid palette(mid); "
+        "border-radius: 3px; "
+        "padding: 4px 8px;");
+    personalLay->addWidget(lblPieValor);
+
+    layout->addWidget(grpPersonal);
+    layout->addStretch();
+}
+
+// ===========================================================================
+// Tab 3 — Base de Datos
 // ===========================================================================
 
 void SettingsDialog::buildTabBaseDatos(QWidget* tab) {
@@ -246,11 +578,9 @@ void SettingsDialog::buildTabBaseDatos(QWidget* tab) {
     layout->setContentsMargins(16, 16, 16, 16);
     layout->setSpacing(16);
 
-    // Naranja adaptivo: más brillante en modo oscuro para mantener contraste legible
     const bool darkMode = QApplication::palette().color(QPalette::Window).lightness() < 128;
     const QString warnColor = darkMode ? QStringLiteral("#FF8A65") : QStringLiteral("#E65100");
 
-    // ---- Ubicación actual ----
     auto* grpUbic = new QGroupBox("Ubicación de la Base de Datos");
     auto* vlUbic = new QVBoxLayout(grpUbic);
     auto* lblRuta = new QLabel(m_dbManager.dbPath());
@@ -260,47 +590,39 @@ void SettingsDialog::buildTabBaseDatos(QWidget* tab) {
     vlUbic->addWidget(lblRuta);
     layout->addWidget(grpUbic);
 
-    // ---- Respaldo manual ----
     auto* grpBackup = new QGroupBox("Crear Respaldo");
     auto* vlBackup = new QVBoxLayout(grpBackup);
-
     auto* lblBackupInfo = new QLabel(
         "Genera un respaldo de la base de datos actual. Se crean dos archivos:\n"
         "el archivo de base de datos (.db) y su firma de integridad (.sha256).\n"
         "Ambos archivos son necesarios para restaurar un respaldo en el futuro.");
     lblBackupInfo->setWordWrap(true);
     vlBackup->addWidget(lblBackupInfo);
-
     auto* lblBackupAviso = new QLabel(
         "Guarda los respaldos en una ubicación distinta al equipo de trabajo.");
     lblBackupAviso->setWordWrap(true);
     lblBackupAviso->setStyleSheet(QString("color: %1; font-size: 9pt;").arg(warnColor));
     vlBackup->addWidget(lblBackupAviso);
-
     auto* btnBackup = new QPushButton("Crear respaldo…");
     btnBackup->setFixedWidth(160);
     connect(btnBackup, &QPushButton::clicked, this, &SettingsDialog::onCrearRespaldo);
     vlBackup->addWidget(btnBackup, 0, Qt::AlignLeft);
     layout->addWidget(grpBackup);
 
-    // ---- Cargar respaldo ----
     auto* grpRestore = new QGroupBox("Cargar Respaldo");
     auto* vlRestore = new QVBoxLayout(grpRestore);
-
     auto* lblRestoreInfo = new QLabel(
         "Restaura la base de datos desde un respaldo previamente generado.\n"
         "Necesitarás seleccionar ambos archivos del bundle de respaldo:\n"
         "el archivo de base de datos (.db) y su firma (.sha256).");
     lblRestoreInfo->setWordWrap(true);
     vlRestore->addWidget(lblRestoreInfo);
-
     auto* lblRestoreAviso = new QLabel(
         "Solo se aceptan respaldos compatibles con la versión actual del sistema.\n"
         "La aplicación se cerrará al completar el proceso de restauración.");
     lblRestoreAviso->setWordWrap(true);
     lblRestoreAviso->setStyleSheet(QString("color: %1; font-size: 9pt;").arg(warnColor));
     vlRestore->addWidget(lblRestoreAviso);
-
     auto* btnRestore = new QPushButton("Cargar respaldo…");
     btnRestore->setFixedWidth(160);
     connect(btnRestore, &QPushButton::clicked, this, &SettingsDialog::onCargarRespaldo);
@@ -319,8 +641,48 @@ void SettingsDialog::loadFromRepo() {
     m_txtLibreria->setText(cfg.libreriaNombre);
     m_txtEmpresa->setText(cfg.empresaNombre);
     m_txtRFC->setText(cfg.rfc.toUpper());
-    m_txtTel1->setText(cfg.tel1);
-    m_txtTel2->setText(cfg.tel2);
+    m_txtEmail->setText(cfg.email);
+
+    // Si aun no se ha guardado un nombre de contacto, precargamos el valor
+    // por defecto: "Libreria <nombre de la libreria>".
+    if (cfg.contactoNombre.isEmpty() && !cfg.libreriaNombre.isEmpty())
+        m_txtContacto->setText("Librería " + cfg.libreriaNombre);
+    else
+        m_txtContacto->setText(cfg.contactoNombre);
+
+    // Dirección
+    m_txtDirCalle->setText(cfg.dirCalle);
+    m_txtDirNumExt->setText(cfg.dirNumExterior);
+    m_txtDirNumInt->setText(cfg.dirNumInterior);
+    m_txtDirCP->setText(cfg.dirCodigoPostal);
+    m_txtDirColonia->setText(cfg.dirColonia);
+    m_txtDirMunicipio->setText(cfg.dirMunicipio);
+    {
+        const int idx = m_cmbDirEstado->findText(cfg.dirEstado);
+        m_cmbDirEstado->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
+
+    // Regimen fiscal: buscar el item correspondiente en el combobox
+    if (!cfg.regimenFiscalCode.isEmpty()) {
+        const QString buscar = cfg.regimenFiscalCode + " – " + cfg.regimenFiscalDesc;
+        const int idx = m_cmbRegimen->findText(buscar);
+        if (idx >= 0) m_cmbRegimen->setCurrentIndex(idx);
+        else          m_cmbRegimen->setCurrentIndex(0); // sin especificar
+    } else {
+        m_cmbRegimen->setCurrentIndex(0);
+    }
+
+    // Borrar filas previas y recargar telefonos
+    for (auto& row : m_telRows) {
+        if (row.widget) row.widget->deleteLater();
+    }
+    m_telRows.clear();
+    for (const auto& tel : cfg.telefonos) {
+        addTelRow(tel.tipo, tel.numero);
+    }
+    if (m_telRows.isEmpty()) {
+        addTelRow("Local", "");  // al menos una fila visible
+    }
 
     m_logoLibreria     = cfg.logoLibreria;
     m_logoLibreriaMime = cfg.logoLibreriaMime;
@@ -400,16 +762,44 @@ void SettingsDialog::onQuitarLogoEmpresa() {
 }
 
 // ===========================================================================
-// Slot — Guardar datos de libreria
+// Slot — Guardar
 // ===========================================================================
 
 void SettingsDialog::onGuardarClicked() {
     Calculadora::LibreriaConfig cfg;
-    cfg.libreriaNombre   = m_txtLibreria->text().trimmed();
-    cfg.empresaNombre    = m_txtEmpresa->text().trimmed();
-    cfg.rfc              = m_txtRFC->text().trimmed().toUpper();
-    cfg.tel1             = m_txtTel1->text().trimmed();
-    cfg.tel2             = m_txtTel2->text().trimmed();
+    cfg.libreriaNombre = m_txtLibreria->text().trimmed();
+    cfg.empresaNombre  = m_txtEmpresa->text().trimmed();
+    cfg.rfc            = m_txtRFC->text().trimmed().toUpper();
+    cfg.email          = m_txtEmail->text().trimmed();
+    cfg.contactoNombre   = m_txtContacto->text().trimmed();
+    cfg.dirCalle         = m_txtDirCalle->text().trimmed();
+    cfg.dirNumExterior   = m_txtDirNumExt->text().trimmed();
+    cfg.dirNumInterior   = m_txtDirNumInt->text().trimmed();
+    cfg.dirCodigoPostal  = m_txtDirCP->text().trimmed();
+    cfg.dirColonia       = m_txtDirColonia->text().trimmed();
+    cfg.dirMunicipio     = m_txtDirMunicipio->text().trimmed();
+    cfg.dirEstado        = m_cmbDirEstado->currentIndex() > 0
+                               ? m_cmbDirEstado->currentText() : QString{};
+
+    // Regimen fiscal: extraer codigo y descripcion del item seleccionado
+    const QString regimenText = m_cmbRegimen->currentText();
+    if (m_cmbRegimen->currentIndex() > 0) {
+        // Formato: "601 – Descripcion del regimen"
+        const int sep = regimenText.indexOf(" – ");
+        if (sep > 0) {
+            cfg.regimenFiscalCode = regimenText.left(sep).trimmed();
+            cfg.regimenFiscalDesc = regimenText.mid(sep + 3).trimmed();
+        }
+    }
+
+    // Telefonos: recolectar filas no vacias
+    for (const auto& row : m_telRows) {
+        const QString num = row.numero->text().trimmed();
+        if (!num.isEmpty()) {
+            cfg.telefonos.append({ row.tipo->currentText(), num });
+        }
+    }
+
     cfg.logoLibreria     = m_logoLibreria;
     cfg.logoLibreriaMime = m_logoLibreriaMime;
     cfg.logoEmpresa      = m_logoEmpresa;
@@ -425,7 +815,6 @@ void SettingsDialog::onGuardarClicked() {
 
 // ===========================================================================
 // Slot — Crear respaldo
-//   Genera: <nombre>.db  +  <nombre>.sha256 (ambos en la misma carpeta)
 // ===========================================================================
 
 void SettingsDialog::onCrearRespaldo() {
@@ -443,7 +832,6 @@ void SettingsDialog::onCrearRespaldo() {
         return;
     }
 
-    // Asegurar que el WAL este integrado antes de copiar
     QSqlQuery checkpoint(m_dbManager.database());
     checkpoint.exec("PRAGMA wal_checkpoint(FULL)");
 
@@ -454,7 +842,6 @@ void SettingsDialog::onCrearRespaldo() {
         return;
     }
 
-    // Generar firma SHA-256 del archivo copiado
     const QByteArray hash = computeSha256(dest);
     if (hash.isEmpty()) {
         QMessageBox::warning(this, "Advertencia",
@@ -486,25 +873,14 @@ void SettingsDialog::onCrearRespaldo() {
 
 // ===========================================================================
 // Slot — Cargar respaldo
-//   Flujo:
-//     1. Seleccionar .db del respaldo
-//     2. Seleccionar .sha256 del respaldo
-//     3. Verificar integridad (SHA-256)
-//     4. Verificar compatibilidad de schema (PRAGMA user_version)
-//     5. Forzar respaldo de seguridad de la DB actual (TlacuiaGCL-DB-ddMMyyyy)
-//     6. Colocar .db en <dbActual>.restore_candidate
-//     7. Cerrar la aplicacion — DatabaseManager aplicara el swap al reiniciar
 // ===========================================================================
 
 void SettingsDialog::onCargarRespaldo() {
-    // -- Paso 1: seleccionar el .db del respaldo --
     const QString backupDb = QFileDialog::getOpenFileName(
         this, "Seleccionar archivo de base de datos del respaldo", {},
         "Base de datos SQLite (*.db *.sqlite)");
     if (backupDb.isEmpty()) return;
 
-    // Validación de extensión post-selección: en Windows el file dialog puede
-    // mostrar archivos .DB (mayúsculas) que no coincidan con el filtro.
     {
         const QString ext = QFileInfo(backupDb).suffix().toLower();
         if (ext != "db" && ext != "sqlite") {
@@ -515,7 +891,6 @@ void SettingsDialog::onCargarRespaldo() {
         }
     }
 
-    // Evitar que el usuario seleccione la DB activa como respaldo
     if (QFileInfo(backupDb).canonicalFilePath() ==
         QFileInfo(m_dbManager.dbPath()).canonicalFilePath()) {
         QMessageBox::warning(this, "Archivo no válido",
@@ -524,8 +899,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // -- Paso 2: seleccionar el .sha256 del mismo respaldo --
-    // Sugiere la carpeta del .db y el nombre esperado del hash
     const QString sha256Sugerido = QFileInfo(backupDb).dir().filePath(
         QFileInfo(backupDb).completeBaseName() + ".sha256");
     const QString backupHash = QFileDialog::getOpenFileName(
@@ -535,7 +908,6 @@ void SettingsDialog::onCargarRespaldo() {
         "Archivo de verificación SHA-256 (*.sha256);;Todos los archivos (*)");
     if (backupHash.isEmpty()) return;
 
-    // Validación de extensión del archivo de verificación
     if (QFileInfo(backupHash).suffix().toLower() != "sha256") {
         QMessageBox::warning(this, "Formato no válido",
             "El archivo de verificación no tiene extensión .sha256.\n"
@@ -543,7 +915,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // -- Paso 3: verificar integridad del respaldo --
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const QByteArray hashCalculado = computeSha256(backupDb);
     QApplication::restoreOverrideCursor();
@@ -569,7 +940,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // -- Paso 4: verificar compatibilidad de schema --
     const int schemaRespaldo = leerSchemaVersion(backupDb);
     if (schemaRespaldo < 0) {
         QMessageBox::critical(this, "No se pudo verificar el respaldo",
@@ -589,7 +959,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // -- Paso 5: forzar respaldo de seguridad de la DB actual --
     QMessageBox::information(this, "Respaldo de seguridad requerido",
         "Antes de continuar, debes crear un respaldo de seguridad de la\n"
         "base de datos actual. Se generarán dos archivos:\n\n"
@@ -597,7 +966,7 @@ void SettingsDialog::onCargarRespaldo() {
         "  • TlacuiaGCL-DB-<fecha>.sha256\n\n"
         "Elige la carpeta donde guardarlos.");
 
-    const QString fechaSeguridad = QDate::currentDate().toString("ddMMyyyy");
+    const QString fechaSeguridad  = QDate::currentDate().toString("ddMMyyyy");
     const QString nombreSeguridad = QString("TlacuiaGCL-DB-%1.db").arg(fechaSeguridad);
 
     const QString destSeguridad = QFileDialog::getSaveFileName(
@@ -616,7 +985,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // Checkpoint WAL y copiar
     QSqlQuery checkpoint(m_dbManager.database());
     checkpoint.exec("PRAGMA wal_checkpoint(FULL)");
 
@@ -627,7 +995,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // Generar .sha256 del respaldo de seguridad
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const QByteArray hashSeguridad = computeSha256(destSeguridad);
     QApplication::restoreOverrideCursor();
@@ -643,7 +1010,6 @@ void SettingsDialog::onCargarRespaldo() {
             "Continúa bajo tu propio riesgo o repite el proceso.");
     }
 
-    // -- Paso 6: colocar el respaldo como candidato de restauracion --
     const QString candidato = m_dbManager.dbPath() + ".restore_candidate";
     if (QFile::exists(candidato)) QFile::remove(candidato);
     if (!QFile::copy(backupDb, candidato)) {
@@ -653,7 +1019,6 @@ void SettingsDialog::onCargarRespaldo() {
         return;
     }
 
-    // -- Paso 7: informar y cerrar la aplicacion --
     QMessageBox msgCierre(this);
     msgCierre.setWindowTitle("Restauración lista — la app se cerrará");
     msgCierre.setIcon(QMessageBox::Information);

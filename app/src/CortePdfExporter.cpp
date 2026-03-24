@@ -89,9 +89,29 @@ bool CortePdfExporter::exportar(const Calculadora::ConcesionRecord&       conces
     QString logosHtml = logo1 + ((!logo1.isEmpty() && !logo2.isEmpty()) ? "&nbsp;" : "") + logo2;
     if (logosHtml.isEmpty()) logosHtml = "<span style='font-size:9pt;color:#bbb;'>(Sin logo)</span>";
 
-    // Tel
-    QString tel = esc(config.tel1);
-    if (!config.tel2.isEmpty()) tel += " / " + esc(config.tel2);
+    // Construir filas adicionales de contacto (telefonos + email)
+    QString telStr;
+    for (const auto& t : config.telefonos) {
+        if (t.numero.isEmpty()) continue;
+        if (!telStr.isEmpty()) telStr += " &nbsp;·&nbsp; ";
+        if (!t.tipo.isEmpty() && t.tipo != "Otro")
+            telStr += "<b>" + esc(t.tipo) + ":</b>&nbsp;";
+        telStr += esc(t.numero);
+    }
+    QString extraContactHtml;
+    if (!telStr.isEmpty())
+        extraContactHtml += QString("<tr><td class=\"info-lbl\">Tel:</td>"
+                                    "<td colspan=\"3\">%1</td></tr>\n").arg(telStr);
+    if (!config.email.isEmpty())
+        extraContactHtml += QString("<tr><td class=\"info-lbl\">Email:</td>"
+                                    "<td colspan=\"3\">%1</td></tr>\n").arg(esc(config.email));
+
+    // Fila de regimen fiscal (solo si esta configurado)
+    QString regimenHtml;
+    if (!config.regimenFiscalCode.isEmpty())
+        regimenHtml = QString("<tr><td class=\"info-lbl\" style=\"color:#777;font-size:7.5pt;\">Régimen:</td>"
+                              "<td colspan=\"3\" style=\"color:#777;font-size:7.5pt;\">%1 – %2</td></tr>\n")
+                      .arg(esc(config.regimenFiscalCode), esc(config.regimenFiscalDesc));
 
     // Empresa
     QString empresaLine = (!config.empresaNombre.isEmpty() && config.empresaNombre != config.libreriaNombre)
@@ -149,15 +169,16 @@ bool CortePdfExporter::exportar(const Calculadora::ConcesionRecord&       conces
             <td class="info-lbl">Empresa:</td><td style="padding-right:16px;">%3</td>
             <td class="info-lbl">RFC:</td><td>%4</td>
           </tr>
-          <tr><td class="info-lbl">Tel:</td><td colspan="3">%5</td></tr>
+          %5
+          %6
         </table>
       </td>
       <td style="width:145px; vertical-align:middle; text-align:right;">
         <table class="folio-box" cellpadding="0" cellspacing="0" style="margin-left:auto;">
           <tr><td class="folio-hdr">FOLIO</td></tr>
-          <tr><td class="folio-val">%6</td></tr>
+          <tr><td class="folio-val">%7</td></tr>
         </table>
-        <div class="fecha-lbl">%7</div>
+        <div class="fecha-lbl">%8</div>
       </td>
     </tr></table>
   </td>
@@ -165,7 +186,9 @@ bool CortePdfExporter::exportar(const Calculadora::ConcesionRecord&       conces
 </table>
 )").arg(logosHtml,
         esc(config.libreriaNombre.isEmpty() ? "Librería" : config.libreriaNombre),
-        empresaLine, esc(config.rfc), tel, esc(folio), esc(fecha));
+        empresaLine, esc(config.rfc),
+        regimenHtml, extraContactHtml,
+        esc(folio), esc(fecha));
 
     // ---- Datos del corte ----
     html += QString(R"(

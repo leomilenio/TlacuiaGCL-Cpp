@@ -31,7 +31,10 @@ namespace Calculadora {
 //   7 — facturacion en emisores; tipo_documento ampliado ('Nota de remision','Otro')
 //   8 — tabla app_config (datos e identidad visual de la libreria)
 //   9 — folio_documento en concesiones; tabla folio_counters
-static constexpr int SCHEMA_VERSION_CURRENT = 9;
+//  10 — app_config: email, regimen_fiscal_code/desc, telefonos 1-4 con tipo
+//  11 — app_config: contacto_nombre
+//  12 — app_config: direccion (calle, num ext/int, CP, colonia, municipio, estado)
+static constexpr int SCHEMA_VERSION_CURRENT = 12;
 
 class DatabaseManager {
 public:
@@ -59,7 +62,10 @@ private:
     [[nodiscard]] bool migrateV5toV6();   // comision_pct + documentos_concesion
     [[nodiscard]] bool migrateV6toV7();   // facturacion en emisores; tipo_documento ampliado
     [[nodiscard]] bool migrateV7toV8();   // tabla app_config (datos e identidad de la libreria)
-    [[nodiscard]] bool migrateV8toV9();
+    [[nodiscard]] bool migrateV8toV9();   // folio_documento + folio_counters
+    [[nodiscard]] bool migrateV9toV10();  // email, regimen_fiscal, telefonos con tipo
+    [[nodiscard]] bool migrateV10toV11(); // contacto_nombre
+    [[nodiscard]] bool migrateV11toV12(); // direccion
 
     [[nodiscard]] int  getSchemaVersion();
     bool               setSchemaVersion(int version);

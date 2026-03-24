@@ -178,6 +178,21 @@ bool DatabaseManager::runMigrations() {
     if (current < 9) {
         if (!migrateV8toV9()) return false;
         setSchemaVersion(9);
+        current = 9;
+    }
+    if (current < 10) {
+        if (!migrateV9toV10()) return false;
+        setSchemaVersion(10);
+        current = 10;
+    }
+    if (current < 11) {
+        if (!migrateV10toV11()) return false;
+        setSchemaVersion(11);
+        current = 11;
+    }
+    if (current < 12) {
+        if (!migrateV11toV12()) return false;
+        setSchemaVersion(12);
     }
 
     // Si se ejecutó alguna migración, hacer checkpoint para consolidar los cambios
@@ -617,6 +632,121 @@ bool DatabaseManager::migrateV8toV9() {
     q.exec("INSERT OR IGNORE INTO folio_counters (tipo, contador) VALUES ('reporte_interno', 0)");
 
     qDebug() << "Migracion V8->V9 completada (folio_documento + folio_counters).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V9 -> V10: app_config ampliada — email, regimen_fiscal, telefonos con tipo
+//
+// Se recrea la tabla para:
+//   - Añadir columnas email, regimen_fiscal_code, regimen_fiscal_desc
+//   - Renombrar tel1/tel2 a tel1_numero/tel2_numero con campo tipo asociado
+//   - Añadir slots tel3 y tel4 (tipo + numero)
+// Los valores de tel1/tel2 existentes se migran con tipo 'Local'.
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV9toV10() {
+    QSqlQuery q(m_db);
+
+    if (!q.exec(R"(
+        CREATE TABLE IF NOT EXISTS app_config_v10 (
+            id                  INTEGER PRIMARY KEY CHECK(id = 1),
+            libreria_nombre     TEXT    NOT NULL DEFAULT '',
+            empresa_nombre      TEXT    NOT NULL DEFAULT '',
+            rfc                 TEXT    NOT NULL DEFAULT '',
+            email               TEXT    NOT NULL DEFAULT '',
+            regimen_fiscal_code TEXT    NOT NULL DEFAULT '',
+            regimen_fiscal_desc TEXT    NOT NULL DEFAULT '',
+            tel1_tipo           TEXT    NOT NULL DEFAULT '',
+            tel1_numero         TEXT    NOT NULL DEFAULT '',
+            tel2_tipo           TEXT    NOT NULL DEFAULT '',
+            tel2_numero         TEXT    NOT NULL DEFAULT '',
+            tel3_tipo           TEXT    NOT NULL DEFAULT '',
+            tel3_numero         TEXT    NOT NULL DEFAULT '',
+            tel4_tipo           TEXT    NOT NULL DEFAULT '',
+            tel4_numero         TEXT    NOT NULL DEFAULT '',
+            logo_libreria       BLOB,
+            logo_libreria_mime  TEXT,
+            logo_empresa        BLOB,
+            logo_empresa_mime   TEXT
+        )
+    )")) {
+        qCritical() << "migrateV9toV10 crear app_config_v10:" << q.lastError().text();
+        return false;
+    }
+
+    // Copiar en scope propio para garantizar sqlite3_finalize() antes de DROP TABLE
+    {
+        QSqlQuery insertQ(m_db);
+        if (!insertQ.exec(R"(
+            INSERT OR IGNORE INTO app_config_v10
+                (id, libreria_nombre, empresa_nombre, rfc,
+                 tel1_tipo, tel1_numero, tel2_tipo, tel2_numero,
+                 logo_libreria, logo_libreria_mime,
+                 logo_empresa,  logo_empresa_mime)
+            SELECT
+                id, libreria_nombre, empresa_nombre, rfc,
+                CASE WHEN COALESCE(tel1,'') != '' THEN 'Local' ELSE '' END, COALESCE(tel1,''),
+                CASE WHEN COALESCE(tel2,'') != '' THEN 'Local' ELSE '' END, COALESCE(tel2,''),
+                logo_libreria, logo_libreria_mime,
+                logo_empresa,  logo_empresa_mime
+            FROM app_config
+        )")) {
+            qCritical() << "migrateV9toV10 copiar datos:" << insertQ.lastError().text();
+            return false;
+        }
+    }
+
+    if (!q.exec("DROP TABLE app_config")) {
+        qCritical() << "migrateV9toV10 drop old:" << q.lastError().text();
+        return false;
+    }
+    if (!q.exec("ALTER TABLE app_config_v10 RENAME TO app_config")) {
+        qCritical() << "migrateV9toV10 rename:" << q.lastError().text();
+        return false;
+    }
+
+    qDebug() << "Migracion V9->V10 completada (email, regimen_fiscal, telefonos con tipo).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V10 → V11: añade columna contacto_nombre a app_config.
+// ALTER TABLE ADD COLUMN es seguro en SQLite: la columna queda como NULL en
+// filas existentes, sin necesidad de recrear la tabla.
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV10toV11() {
+    QSqlQuery q(m_db);
+    if (!q.exec("ALTER TABLE app_config ADD COLUMN contacto_nombre TEXT")) {
+        qCritical() << "migrateV10toV11:" << q.lastError().text();
+        return false;
+    }
+    qDebug() << "Migracion V10->V11 completada (contacto_nombre).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V11 → V12: añade 7 columnas de dirección a app_config.
+// Se usa ALTER TABLE ADD COLUMN para cada campo; es lo correcto cuando solo
+// se agregan columnas nullable sin reorganizar la estructura.
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV11toV12() {
+    QSqlQuery q(m_db);
+    const QStringList cols = {
+        "ALTER TABLE app_config ADD COLUMN dir_calle         TEXT",
+        "ALTER TABLE app_config ADD COLUMN dir_num_exterior  TEXT",
+        "ALTER TABLE app_config ADD COLUMN dir_num_interior  TEXT",
+        "ALTER TABLE app_config ADD COLUMN dir_codigo_postal TEXT",
+        "ALTER TABLE app_config ADD COLUMN dir_colonia       TEXT",
+        "ALTER TABLE app_config ADD COLUMN dir_municipio     TEXT",
+        "ALTER TABLE app_config ADD COLUMN dir_estado        TEXT",
+    };
+    for (const auto& sql : cols) {
+        if (!q.exec(sql)) {
+            qCritical() << "migrateV11toV12:" << q.lastError().text();
+            return false;
+        }
+    }
+    qDebug() << "Migracion V11->V12 completada (direccion).";
     return true;
 }
 
