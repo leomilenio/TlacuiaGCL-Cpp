@@ -11,6 +11,7 @@ namespace Calculadora {
 DatabaseManager::DatabaseManager(const QString& dbPath)
     : m_dbPath(dbPath)
     , m_connectionName(QUuid::createUuid().toString())
+    , m_ownerThread(QThread::currentThread())
 {
 }
 
@@ -56,16 +57,62 @@ bool DatabaseManager::initialize() {
         return false;
     }
 
-    QSqlQuery pragma(m_db);
-    pragma.exec("PRAGMA journal_mode=WAL");
-    pragma.exec("PRAGMA foreign_keys=ON");
+    // Scope propio para que pragma sea destruido (sqlite3_finalize) ANTES de
+    // llamar a runMigrations(). PRAGMA wal_checkpoint devuelve SQLITE_ROW con
+    // (busy, log, checkpointed); mientras el QSqlQuery no sea finalizado, su
+    // sqlite3_stmt* mantiene un shared read lock sobre la base de datos.
+    // En bases de datos :memory: (tests), WAL no está soportado y SQLite cae
+    // a journal mode: en ese modo un shared read lock bloquea cualquier
+    // operacion de escritura exclusiva como DROP TABLE, causando SQLITE_LOCKED.
+    // En disco con WAL (produccion) los lectores no bloquean escritores, por
+    // eso el bug solo se manifiesta en los tests y no en la app real.
+    {
+        QSqlQuery pragma(m_db);
+
+        // WAL es la mejor opción para apps locales de un solo usuario:
+        // - El archivo principal nunca queda corrupto tras un crash.
+        // - Las transacciones incompletas se descartan automáticamente al re-abrir.
+        // - Lecturas y escrituras no se bloquean entre sí.
+        pragma.exec("PRAGMA journal_mode=WAL");
+
+        // NORMAL es suficiente con WAL: garantiza durabilidad ante crash del SO.
+        // (FULL, el default, agrega fsync extra que no aporta con WAL en uso local.)
+        pragma.exec("PRAGMA synchronous=NORMAL");
+
+        pragma.exec("PRAGMA foreign_keys=ON");
+
+        // Consolida cualquier WAL huérfano de una sesión anterior (crash o cierre abrupto).
+        // Si el WAL contiene transacciones committed, se aplican al archivo principal.
+        // Si contiene transacciones parciales, se descartan.
+        // Resultado: la DB arranca siempre desde un estado limpio y conocido.
+        pragma.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } // ~QSqlQuery → sqlite3_finalize() → shared read lock liberado
 
     return runMigrations();
 }
 
 bool DatabaseManager::isOpen() const { return m_db.isOpen(); }
-QSqlDatabase& DatabaseManager::database() { return m_db; }
+
+QSqlDatabase& DatabaseManager::database() {
+    // En builds de Debug, detecta accesos desde hilos incorrectos antes de que
+    // QSqlDatabase los provoque (crash o comportamiento indefinido).
+    // Ver NOTA DE THREAD SAFETY en DatabaseManager.h.
+    Q_ASSERT_X(QThread::currentThread() == m_ownerThread,
+               "DatabaseManager::database",
+               "Acceso a la base de datos desde un hilo distinto al hilo propietario. "
+               "Ver NOTA DE THREAD SAFETY en DatabaseManager.h.");
+    return m_db;
+}
+
 const QString& DatabaseManager::connectionName() const { return m_connectionName; }
+
+void DatabaseManager::checkpointWal() {
+    if (!m_db.isOpen()) return;
+    QSqlQuery q(m_db);
+    // TRUNCATE: aplica todas las transacciones committed y vacía el WAL.
+    // Más agresivo que PASSIVE (no espera lectores) pero seguro en uso local.
+    q.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+}
 
 // ---------------------------------------------------------------------------
 // Migraciones
@@ -85,6 +132,7 @@ bool DatabaseManager::setSchemaVersion(int version) {
 
 bool DatabaseManager::runMigrations() {
     int current = getSchemaVersion();
+    const int initialVersion = current;
     qDebug() << "Schema version:" << current << "-> target:" << SCHEMA_VERSION_CURRENT;
 
     if (current < 1) {
@@ -131,6 +179,14 @@ bool DatabaseManager::runMigrations() {
         if (!migrateV8toV9()) return false;
         setSchemaVersion(9);
     }
+
+    // Si se ejecutó alguna migración, hacer checkpoint para consolidar los cambios
+    // en el archivo principal antes de que la app empiece a operar.
+    if (getSchemaVersion() > initialVersion) {
+        checkpointWal();
+        qDebug() << "DatabaseManager: checkpoint post-migración completado.";
+    }
+
     return true;
 }
 
@@ -248,16 +304,24 @@ bool DatabaseManager::migrateV1toV2() {
         return false;
     }
 
-    // Copiar datos existentes (mapeo de columnas renombradas)
-    if (!q.exec(R"(
-        INSERT OR IGNORE INTO concesiones_v2
-            (id, emisor_nombre, fecha_recepcion, fecha_vencimiento, notas, activa)
-        SELECT id, nombre_proveedor, fecha_inicio, fecha_fin, notas, activa
-        FROM concesiones
-    )")) {
-        qCritical() << "migrateV1toV2 copiar datos:" << q.lastError().text();
-        return false;
-    }
+    // Copiar datos existentes en un scope propio para garantizar que el
+    // sqlite3_stmt quede FINALIZADO (no solo reseteado) antes del DROP TABLE.
+    // q.finish() llama sqlite3_reset(), que no libera los cursores B-tree;
+    // solo el destructor de QSqlQuery llama sqlite3_finalize(). Si el stmt
+    // del INSERT...SELECT sigue activo al ejecutar DROP TABLE, SQLite devuelve
+    // SQLITE_LOCKED ("database table is locked").
+    {
+        QSqlQuery insertQ(m_db);
+        if (!insertQ.exec(R"(
+            INSERT OR IGNORE INTO concesiones_v2
+                (id, emisor_nombre, fecha_recepcion, fecha_vencimiento, notas, activa)
+            SELECT id, nombre_proveedor, fecha_inicio, fecha_fin, notas, activa
+            FROM concesiones
+        )")) {
+            qCritical() << "migrateV1toV2 copiar datos:" << insertQ.lastError().text();
+            return false;
+        }
+    } // ~QSqlQuery -> sqlite3_finalize() -> libera cursor en concesiones
 
     if (!q.exec("DROP TABLE concesiones")) {
         qCritical() << "migrateV1toV2 drop old:" << q.lastError().text();
@@ -463,11 +527,16 @@ bool DatabaseManager::migrateV6toV7() {
         return false;
     }
 
-    if (!q.exec("INSERT INTO concesiones_v7 SELECT * FROM concesiones")) {
-        qCritical() << "migrateV6toV7 copiar concesiones:" << q.lastError().text();
-        q.exec("PRAGMA foreign_keys = ON");
-        return false;
-    }
+    // Scope propio para garantizar sqlite3_finalize() antes de DROP TABLE.
+    // Ver comentario equivalente en migrateV1toV2.
+    {
+        QSqlQuery insertQ(m_db);
+        if (!insertQ.exec("INSERT INTO concesiones_v7 SELECT * FROM concesiones")) {
+            qCritical() << "migrateV6toV7 copiar concesiones:" << insertQ.lastError().text();
+            q.exec("PRAGMA foreign_keys = ON");
+            return false;
+        }
+    } // ~QSqlQuery -> sqlite3_finalize() -> libera cursor en concesiones
 
     if (!q.exec("DROP TABLE concesiones")) {
         qCritical() << "migrateV6toV7 drop concesiones:" << q.lastError().text();

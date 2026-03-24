@@ -51,6 +51,9 @@ static bool guardarHashFile(const QString& hashFilePath,
     QFile hf(hashFilePath);
     if (!hf.open(QIODevice::WriteOnly | QIODevice::Text)) return false;
     QTextStream ts(&hf);
+    // Encoding UTF-8 explícito: garantiza que nombres con caracteres no-ASCII
+    // (ej: tildes en rutas de Windows) se escriban correctamente en todas las plataformas.
+    ts.setEncoding(QStringConverter::Utf8);
     ts << QString::fromLatin1(hash.toHex()) << "  " << dbFileName << "\n";
     return true;
 }
@@ -59,7 +62,9 @@ static bool guardarHashFile(const QString& hashFilePath,
 static QString leerHashDesdeArchivo(const QString& sha256Path) {
     QFile hf(sha256Path);
     if (!hf.open(QIODevice::ReadOnly | QIODevice::Text)) return {};
-    QString linea = QString::fromUtf8(hf.readLine()).trimmed();
+    QTextStream ts(&hf);
+    ts.setEncoding(QStringConverter::Utf8);
+    const QString linea = ts.readLine().trimmed();
     // Formato: "<hash>  <filename>" — tomamos solo el primer campo
     return linea.split(QRegularExpression("\\s+")).value(0).toLower();
 }
@@ -498,6 +503,18 @@ void SettingsDialog::onCargarRespaldo() {
         "Base de datos SQLite (*.db *.sqlite)");
     if (backupDb.isEmpty()) return;
 
+    // Validación de extensión post-selección: en Windows el file dialog puede
+    // mostrar archivos .DB (mayúsculas) que no coincidan con el filtro.
+    {
+        const QString ext = QFileInfo(backupDb).suffix().toLower();
+        if (ext != "db" && ext != "sqlite") {
+            QMessageBox::warning(this, "Formato no válido",
+                "El archivo seleccionado no tiene extensión .db o .sqlite.\n"
+                "Selecciona un archivo de base de datos SQLite válido.");
+            return;
+        }
+    }
+
     // Evitar que el usuario seleccione la DB activa como respaldo
     if (QFileInfo(backupDb).canonicalFilePath() ==
         QFileInfo(m_dbManager.dbPath()).canonicalFilePath()) {
@@ -517,6 +534,14 @@ void SettingsDialog::onCargarRespaldo() {
                                       : QFileInfo(backupDb).absolutePath(),
         "Archivo de verificación SHA-256 (*.sha256);;Todos los archivos (*)");
     if (backupHash.isEmpty()) return;
+
+    // Validación de extensión del archivo de verificación
+    if (QFileInfo(backupHash).suffix().toLower() != "sha256") {
+        QMessageBox::warning(this, "Formato no válido",
+            "El archivo de verificación no tiene extensión .sha256.\n"
+            "Selecciona el archivo de firma generado junto con el respaldo.");
+        return;
+    }
 
     // -- Paso 3: verificar integridad del respaldo --
     QApplication::setOverrideCursor(Qt::WaitCursor);

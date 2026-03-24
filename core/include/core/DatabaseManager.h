@@ -1,8 +1,24 @@
 #pragma once
 #include <QString>
 #include <QSqlDatabase>
+#include <QThread>
 
 namespace Calculadora {
+
+// NOTA DE THREAD SAFETY
+// ---------------------
+// DatabaseManager NO es thread-safe. Toda llamada a initialize(), database(),
+// checkpointWal() y los métodos de repositorios derivados DEBE realizarse
+// desde el mismo hilo que construyó la instancia (normalmente el hilo principal).
+//
+// Qt documenta que QSqlDatabase y QSqlQuery sólo pueden usarse desde el hilo
+// que abrió la conexión. Usar database() desde otro hilo causará un crash o
+// comportamiento indefinido.
+//
+// Si en el futuro se requieren operaciones en background (p.ej. exportación
+// asíncrona), crear una conexión independiente con un DatabaseManager propio
+// en ese hilo, o usar QMetaObject::invokeMethod() para despachar al hilo dueño.
+
 
 // Versiones del schema:
 //   1 — Schema inicial
@@ -24,6 +40,10 @@ public:
 
     [[nodiscard]] bool initialize();
     [[nodiscard]] bool isOpen() const;
+
+    // Consolida el WAL en el archivo principal de la DB.
+    // Llamar después de operaciones de escritura masiva (migraciones, importaciones).
+    void checkpointWal();
 
     QSqlDatabase&  database();
     const QString& connectionName() const;
@@ -47,6 +67,7 @@ private:
     QString       m_dbPath;
     QSqlDatabase  m_db;
     QString       m_connectionName;
+    QThread*      m_ownerThread = nullptr;  // hilo que construyó la instancia
 };
 
 } // namespace Calculadora

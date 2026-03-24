@@ -3,6 +3,7 @@
 #include <QTextDocument>
 #include <QPainter>
 #include <QPrinter>
+#include <QFontDatabase>
 #include <QLocale>
 #include <QDate>
 #include <QCoreApplication>
@@ -24,7 +25,13 @@ static void drawFooter(QPainter& painter,
     painter.setPen(QPen(QColor("#cccccc"), 1.0));
     painter.drawLine(QPointF(0, lineY), QPointF(pageWidthPx, lineY));
 
-    QFont f("Arial");
+#if defined(Q_OS_WIN)
+    QFont f("Segoe UI");
+#elif defined(Q_OS_MACOS)
+    QFont f("Helvetica Neue");
+#else
+    QFont f("DejaVu Sans");
+#endif
     f.setPixelSize(qRound(7.0 * res / 72.0));
     painter.setFont(f);
     painter.setPen(QColor("#888888"));
@@ -267,8 +274,12 @@ bool EmisorPdfExporter::exportar(
     QRectF contentPx = printer.pageRect(QPrinter::DevicePixel);
     QSizeF docSize(contentPx.width(), contentPx.height() - footerHPx - lineGapPx);
 
+    // COMPAT-09 / High-DPI: ver comentario equivalente en CortePdfExporter.cpp.
+    // setPaintDevice antes de setHtml/setPageSize garantiza layout en device pixels
+    // del printer (1200 dpi), independiente del devicePixelRatio de la pantalla.
     QTextDocument doc;
     doc.documentLayout()->setPaintDevice(&printer);
+    Q_ASSERT(doc.documentLayout()->paintDevice() != nullptr);
     doc.setDocumentMargin(0);
     doc.setHtml(html);
     doc.setPageSize(docSize);

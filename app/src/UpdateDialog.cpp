@@ -11,6 +11,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QSslConfiguration>
 #include <QDesktopServices>
 #include <QUrl>
 #include <QApplication>
@@ -23,6 +24,38 @@ namespace App {
 
 static const char* RELEASES_API =
     "https://api.github.com/repos/leomilenio/TlacuiaGCL-Cpp/releases/latest";
+
+// Mapea QNetworkReply::NetworkError a mensajes amigables en español.
+// Evita mostrar strings del SO (en inglés en Windows, variables en macOS).
+static QString networkErrorToSpanish(QNetworkReply* reply) {
+    switch (reply->error()) {
+    case QNetworkReply::HostNotFoundError:
+        return "No se encontró el servidor. Verifica tu conexión a internet.";
+    case QNetworkReply::ConnectionRefusedError:
+        return "El servidor rechazó la conexión.";
+    case QNetworkReply::RemoteHostClosedError:
+        return "El servidor cerró la conexión inesperadamente.";
+    case QNetworkReply::TimeoutError:
+        return "La solicitud tardó demasiado. Intenta de nuevo.";
+    case QNetworkReply::SslHandshakeFailedError:
+        return "Error de seguridad SSL. Tu sistema puede tener certificados desactualizados.";
+    case QNetworkReply::ContentNotFoundError:
+        return "No se encontraron releases publicados en el repositorio.";
+    case QNetworkReply::TooManyRedirectsError:
+        return "Demasiadas redirecciones al conectar con GitHub. Intenta de nuevo.";
+    case QNetworkReply::AuthenticationRequiredError:
+        return "El repositorio requiere autenticación (puede ser privado).";
+    case QNetworkReply::OperationCanceledError:
+        return "La operación fue cancelada.";
+    case QNetworkReply::NetworkSessionFailedError:
+    case QNetworkReply::UnknownNetworkError:
+        return "Sin conexión a internet o red no disponible.";
+    default:
+        // No exponer el string del SO; sólo el código numérico para diagnóstico.
+        return QString("Error de red (código %1). Verifica tu conexión a internet.")
+               .arg(static_cast<int>(reply->error()));
+    }
+}
 
 // Compara dos strings de version "X.Y.Z" — devuelve true si remote > current.
 static bool isNewer(const QString& current, const QString& remote) {
@@ -134,6 +167,14 @@ void UpdateDialog::onVerificarClicked() {
                   QString("TlacuiaGCL-Cpp/%1 Qt/%2")
                       .arg(QApplication::applicationVersion(), qVersion()));
     req.setRawHeader(QByteArray("Accept"), QByteArray("application/vnd.github+json"));
+
+    // SSL: documentamos explícitamente que se requiere verificación de certificados.
+    // Qt usa VerifyPeer por defecto, pero lo fijamos para que no sea sobreescrito
+    // por ninguna configuración global alterada en el entorno del usuario.
+    QSslConfiguration sslConf = QSslConfiguration::defaultConfiguration();
+    sslConf.setPeerVerifyMode(QSslSocket::VerifyPeer);
+    req.setSslConfiguration(sslConf);
+
     m_nam->get(req);
 }
 
@@ -150,7 +191,7 @@ void UpdateDialog::onReplyFinished(QNetworkReply* reply) {
     if (reply->error() != QNetworkReply::NoError) {
         setStatus(QString(
             "<span style='color:%1;'>&#10007; No se pudo conectar con GitHub.<br>"
-            "<small>%2</small></span>").arg(cRojo, reply->errorString().toHtmlEscaped()));
+            "<small>%2</small></span>").arg(cRojo, networkErrorToSpanish(reply).toHtmlEscaped()));
         return;
     }
 

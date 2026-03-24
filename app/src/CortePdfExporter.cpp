@@ -3,6 +3,7 @@
 #include <QTextDocument>
 #include <QPainter>
 #include <QPrinter>
+#include <QFontDatabase>
 #include <QLocale>
 #include <QDate>
 #include <QCoreApplication>
@@ -31,8 +32,14 @@ static void drawFooter(QPainter& painter,
     painter.setPen(QPen(QColor("#cccccc"), 1.0));
     painter.drawLine(QPointF(0, lineY), QPointF(pageWidthPx, lineY));
 
-    // Texto del pie
-    QFont f("Arial");
+    // Texto del pie — fuente garantizada según SO
+#if defined(Q_OS_WIN)
+    QFont f("Segoe UI");          // Windows Vista+, siempre presente
+#elif defined(Q_OS_MACOS)
+    QFont f("Helvetica Neue");    // macOS 10.9+, siempre presente
+#else
+    QFont f("DejaVu Sans");       // Linux: paquete fonts-dejavu estándar
+#endif
     f.setPixelSize(qRound(7.0 * res / 72.0));   // 7 pt en device pixels
     painter.setFont(f);
     painter.setPen(QColor("#888888"));
@@ -259,9 +266,17 @@ bool CortePdfExporter::exportar(const Calculadora::ConcesionRecord&       conces
     QRectF contentPx = printer.pageRect(QPrinter::DevicePixel);
     QSizeF docSize(contentPx.width(), contentPx.height() - footerHPx - lineGapPx);
 
-    // Asociar el documento al printer ANTES del layout para que use el DPI correcto
+    // COMPAT-09 / High-DPI: asociar el printer como paint device ANTES de setHtml() y
+    // setPageSize(). Esto obliga a QTextDocument a calcular el layout en device pixels
+    // usando el DPI del printer (1200 dpi) en lugar del DPI de la pantalla (96–144 dpi).
+    // Sin esta llamada, el contenido queda comprimido en la esquina superior izquierda
+    // en pantallas Retina/HiDPI porque el layout usa coordenadas de pantalla mientras
+    // que QPainter trabaja en coordenadas del printer.
+    // Resultado: el pageCount() y las coordenadas son estables e independientes de la
+    // escala o devicePixelRatio de la pantalla del usuario.
     QTextDocument doc;
     doc.documentLayout()->setPaintDevice(&printer);
+    Q_ASSERT(doc.documentLayout()->paintDevice() != nullptr);
     doc.setDocumentMargin(0);
     doc.setHtml(html);
     doc.setPageSize(docSize);

@@ -11,7 +11,9 @@ AppConfig AppConfig::loadDefault() {
     if (!dir.exists()) {
         dir.mkpath(dataDir);
     }
-    config.dbPath = dataDir + "/data.db";
+    // QDir::filePath() une la ruta con el separador nativo del SO,
+    // evitando asumir que Qt normalizará "/" en Windows.
+    config.dbPath = QDir(dataDir).filePath("data.db");
     return config;
 }
 
