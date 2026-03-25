@@ -48,6 +48,7 @@ struct ConcesionRecord {
     TipoDocumentoConcesion tipoDocumento = TipoDocumentoConcesion::Factura;
     QString  notas;
     bool     activa            = true;
+    bool     enPrecorte        = false;  // true = en estado de pre-corte
     double   comisionPct       = 30.0;  // % de comision acordada (default 30%)
     QString  createdAt;
     QString  folioDocumento;  // folio del documento de corte (asignado por FolioRepository)
@@ -72,6 +73,7 @@ public:
     [[nodiscard]] bool                   update(const ConcesionRecord& record);
     [[nodiscard]] bool                   remove(int64_t id);
     [[nodiscard]] bool                   finalizar(int64_t id);
+    [[nodiscard]] bool                   guardarPrecorte(int64_t id);
     // Numero de concesiones activas vinculadas a un emisor.
     [[nodiscard]] int                    countActiveByEmisor(int64_t emisorId) const;
     // Todas las concesiones de un emisor (activas + finalizadas).

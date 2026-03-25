@@ -34,7 +34,8 @@ namespace Calculadora {
 //  10 — app_config: email, regimen_fiscal_code/desc, telefonos 1-4 con tipo
 //  11 — app_config: contacto_nombre
 //  12 — app_config: direccion (calle, num ext/int, CP, colonia, municipio, estado)
-static constexpr int SCHEMA_VERSION_CURRENT = 12;
+//  13 — concesiones: en_precorte (estado intermedio antes de cierre definitivo)
+static constexpr int SCHEMA_VERSION_CURRENT = 13;
 
 class DatabaseManager {
 public:
@@ -66,6 +67,7 @@ private:
     [[nodiscard]] bool migrateV9toV10();  // email, regimen_fiscal, telefonos con tipo
     [[nodiscard]] bool migrateV10toV11(); // contacto_nombre
     [[nodiscard]] bool migrateV11toV12(); // direccion
+    [[nodiscard]] bool migrateV12toV13(); // en_precorte en concesiones
 
     [[nodiscard]] int  getSchemaVersion();
     bool               setSchemaVersion(int version);

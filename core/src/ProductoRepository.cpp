@@ -178,19 +178,18 @@ CorteResult ProductoRepository::calcularCorte(int64_t concesionId) const {
     QSqlQuery q(m_db.database());
     q.prepare(R"(
         SELECT
-            COUNT(*)                                            AS cnt,
-            SUM(cantidad_recibida)                             AS sum_qty_rec,
-            SUM(cantidad_vendida)                              AS sum_qty_vend,
-            SUM(cantidad_recibida - cantidad_vendida)          AS sum_qty_dev,
-            SUM(costo * cantidad_vendida)                             AS sum_pago_dist,
-            SUM(costo * (cantidad_recibida - cantidad_vendida))      AS sum_devolucion,
-            SUM(precio_final * cantidad_vendida)                     AS sum_precio_final,
-            SUM((precio_final - costo) * cantidad_vendida)           AS sum_ganancia,
-            SUM(costo)                                               AS sum_costo,
-            SUM(comision)                                            AS sum_comision,
-            SUM(iva_trasladado)                                      AS sum_iva_trasladado,
-            SUM(iva_acreditable)                                     AS sum_iva_acreditable,
-            SUM(iva_neto_sat)                                        AS sum_iva_neto
+            COUNT(*)                                                      AS cnt,
+            SUM(cantidad_recibida)                                        AS sum_qty_rec,
+            SUM(cantidad_vendida)                                         AS sum_qty_vend,
+            SUM(cantidad_recibida - cantidad_vendida)                     AS sum_qty_dev,
+            SUM(costo * cantidad_vendida)                                 AS sum_pago_dist,
+            SUM(costo * (cantidad_recibida - cantidad_vendida))           AS sum_devolucion,
+            SUM(precio_final * cantidad_vendida)                          AS sum_precio_final,
+            SUM(costo)                                                    AS sum_costo,
+            SUM(comision * cantidad_vendida)                              AS sum_comision,
+            SUM(iva_trasladado  * cantidad_vendida)                       AS sum_iva_trasladado,
+            SUM(iva_acreditable * cantidad_vendida)                       AS sum_iva_acreditable,
+            SUM(iva_neto_sat    * cantidad_vendida)                       AS sum_iva_neto
         FROM productos_calculados
         WHERE concesion_id = :cid
     )");
@@ -208,9 +207,9 @@ CorteResult ProductoRepository::calcularCorte(int64_t concesionId) const {
     r.totalPagoAlDistribuidor  = q.value("sum_pago_dist").toDouble();
     r.totalDevolucion          = q.value("sum_devolucion").toDouble();
     r.totalPrecioFinal         = q.value("sum_precio_final").toDouble();
-    r.gananciaEstimada         = q.value("sum_ganancia").toDouble();
     r.totalCosto               = q.value("sum_costo").toDouble();
     r.totalComision            = q.value("sum_comision").toDouble();
+    r.gananciaEstimada         = r.totalComision;  // comision = precioFinal * comisionPct% por unidad
     r.totalIvaTrasladado       = q.value("sum_iva_trasladado").toDouble();
     r.totalIvaAcreditable      = q.value("sum_iva_acreditable").toDouble();
     r.totalIvaNetoPagar        = q.value("sum_iva_neto").toDouble();
@@ -237,13 +236,14 @@ EmisorCorteResumen ProductoRepository::calcularResumenEmisor(int64_t emisorId) c
     QSqlQuery q(m_db.database());
     q.prepare(R"(
         SELECT
-            COUNT(DISTINCT c.id)                                             AS total_conc,
-            COALESCE(SUM(p.cantidad_recibida), 0)                           AS sum_rec,
-            COALESCE(SUM(p.cantidad_vendida), 0)                            AS sum_vend,
-            COALESCE(SUM(p.cantidad_recibida - p.cantidad_vendida), 0)      AS sum_dev,
-            COALESCE(SUM(p.precio_final * p.cantidad_vendida), 0)           AS sum_ingresado,
-            COALESCE(SUM(p.costo * p.cantidad_vendida), 0)                  AS sum_al_dist,
-            COALESCE(SUM(p.costo * (p.cantidad_recibida - p.cantidad_vendida)), 0) AS sum_devolucion
+            COUNT(DISTINCT c.id)                                                        AS total_conc,
+            COALESCE(SUM(p.cantidad_recibida), 0)                                      AS sum_rec,
+            COALESCE(SUM(p.cantidad_vendida), 0)                                       AS sum_vend,
+            COALESCE(SUM(p.cantidad_recibida - p.cantidad_vendida), 0)                 AS sum_dev,
+            COALESCE(SUM(p.precio_final * p.cantidad_vendida), 0)                      AS sum_ingresado,
+            COALESCE(SUM(p.costo        * p.cantidad_vendida), 0)                      AS sum_al_dist,
+            COALESCE(SUM(p.comision     * p.cantidad_vendida), 0)                      AS sum_comisiones,
+            COALESCE(SUM(p.costo * (p.cantidad_recibida - p.cantidad_vendida)), 0)     AS sum_devolucion
         FROM concesiones c
         LEFT JOIN productos_calculados p ON p.concesion_id = c.id
         WHERE c.emisor_id = :eid AND c.activa = 0
@@ -260,7 +260,7 @@ EmisorCorteResumen ProductoRepository::calcularResumenEmisor(int64_t emisorId) c
     r.totalUnidadesDevueltas = q.value("sum_dev").toInt();
     r.totalIngresado         = q.value("sum_ingresado").toDouble();
     r.totalAlDistribuidor    = q.value("sum_al_dist").toDouble();
-    r.totalComisiones        = r.totalIngresado - r.totalAlDistribuidor;
+    r.totalComisiones        = q.value("sum_comisiones").toDouble();
     r.totalDevolucion        = q.value("sum_devolucion").toDouble();
     if (r.totalUnidadesRecibidas > 0) {
         r.rotacionPromedio       = r.totalUnidadesVendidas  * 100.0 / r.totalUnidadesRecibidas;

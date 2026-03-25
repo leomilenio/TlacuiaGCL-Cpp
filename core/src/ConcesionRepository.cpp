@@ -61,6 +61,7 @@ ConcesionRecord ConcesionRepository::mapRow(const QSqlQuery& q) const {
     r.fechaVencimiento     = q.value("fecha_vencimiento").toString();
     r.notas                = q.value("notas").toString();
     r.activa               = q.value("activa").toInt() != 0;
+    r.enPrecorte           = q.value("en_precorte").toInt() != 0;
     r.comisionPct          = q.value("comision_pct").isNull()
                              ? 30.0 : q.value("comision_pct").toDouble();
     r.createdAt            = q.value("created_at").toString();
@@ -217,6 +218,17 @@ bool ConcesionRepository::finalizar(int64_t id) {
     q.bindValue(":id", QVariant::fromValue(static_cast<qlonglong>(id)));
     if (!q.exec()) {
         qCritical() << "ConcesionRepo::finalizar:" << q.lastError().text();
+        return false;
+    }
+    return q.numRowsAffected() > 0;
+}
+
+bool ConcesionRepository::guardarPrecorte(int64_t id) {
+    QSqlQuery q(m_db.database());
+    q.prepare("UPDATE concesiones SET en_precorte = 1 WHERE id = :id");
+    q.bindValue(":id", QVariant::fromValue(static_cast<qlonglong>(id)));
+    if (!q.exec()) {
+        qCritical() << "ConcesionRepo::guardarPrecorte:" << q.lastError().text();
         return false;
     }
     return q.numRowsAffected() > 0;

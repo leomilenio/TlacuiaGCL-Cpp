@@ -45,6 +45,10 @@ CorteDialog::CorteDialog(const Calculadora::ConcesionRecord&       concesion,
 }
 
 void CorteDialog::setupUi() {
+    const bool cerrada  = !m_concesion.activa;
+    const bool precorte = m_concesion.activa && m_concesion.enPrecorte;
+    const bool activa   = m_concesion.activa && !m_concesion.enPrecorte;
+
     QString emisor = m_concesion.emisorNombre.isEmpty() ? "(Sin distribuidor)" : m_concesion.emisorNombre;
     QString folio  = m_concesion.folio.isEmpty()        ? "(Sin folio)"        : m_concesion.folio;
     setWindowTitle(QString("Corte — %1  %2").arg(emisor, folio));
@@ -59,11 +63,17 @@ void CorteDialog::setupUi() {
     title->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(title);
 
-    // Banner de solo lectura (concesion ya cerrada)
-    const bool readOnly = !m_concesion.activa;
-    if (readOnly) {
+    // Banner según modo
+    if (cerrada) {
         auto* banner = new QLabel(
             "\u26A0  Concesion cerrada \u2014 solo lectura. El corte no puede modificarse.");
+        banner->setStyleSheet(
+            "background:#FFF3E0; color:#E65100; padding:6px 10px;"
+            "border-radius:4px; font-weight:bold;");
+        mainLayout->addWidget(banner);
+    } else if (precorte) {
+        auto* banner = new QLabel(
+            "\u26A0  PRE-CORTE \u2014 Revise las cantidades y los documentos antes de finalizar.");
         banner->setStyleSheet(
             "background:#FFF3E0; color:#E65100; padding:6px 10px;"
             "border-radius:4px; font-weight:bold;");
@@ -136,8 +146,8 @@ void CorteDialog::setupUi() {
     m_tabla->resizeColumnsToContents();
     m_tabla->horizontalHeader()->setSectionResizeMode(COL_PRODUCTO, QHeaderView::Stretch);
 
-    // Deshabilitar edicion si la concesion ya esta cerrada
-    if (readOnly) {
+    // Deshabilitar edicion solo si la concesion ya esta cerrada
+    if (cerrada) {
         for (int i = 0; i < m_tabla->rowCount(); ++i) {
             if (auto* spin = qobject_cast<QSpinBox*>(m_tabla->cellWidget(i, COL_VEND)))
                 spin->setEnabled(false);
@@ -174,26 +184,46 @@ void CorteDialog::setupUi() {
 
     addSep();
 
-    // Botones
+    // Botones — fila diferente según modo
     auto* btnRow = new QHBoxLayout();
-    m_btnPdf      = new QPushButton("Exportar PDF");
-    m_btnConfirmar = new QPushButton("Confirmar");
-    auto* btnCancel = new QPushButton("Cancelar");
-    m_btnConfirmar->setObjectName("primaryButton");
-    m_btnConfirmar->setDefault(true);
-    m_btnConfirmar->setVisible(!readOnly);
-    btnRow->addWidget(m_btnPdf);
+    m_btnPdfInterno   = new QPushButton("Corte interno");
+    m_btnPdfProveedor = new QPushButton("Corte proveedor");
+    btnRow->addWidget(m_btnPdfInterno);
+    btnRow->addWidget(m_btnPdfProveedor);
     btnRow->addStretch();
-    btnRow->addWidget(btnCancel);
-    btnRow->addWidget(m_btnConfirmar);
-    mainLayout->addLayout(btnRow);
 
-    connect(btnCancel, &QPushButton::clicked, this, &QDialog::reject);
+    if (cerrada) {
+        auto* btnCerrar = new QPushButton("Cerrar");
+        btnRow->addWidget(btnCerrar);
+        connect(btnCerrar, &QPushButton::clicked, this, &QDialog::reject);
+    } else {
+        auto* btnCancel = new QPushButton("Cancelar");
+        connect(btnCancel, &QPushButton::clicked, this, &QDialog::reject);
+        btnRow->addWidget(btnCancel);
+
+        if (activa) {
+            m_btnGuardarPrecorte = new QPushButton("Guardar pre-corte \u2192");
+            m_btnGuardarPrecorte->setObjectName("primaryButton");
+            m_btnGuardarPrecorte->setDefault(true);
+            btnRow->addWidget(m_btnGuardarPrecorte);
+        } else { // precorte
+            m_btnFinalizar = new QPushButton("\u26A0 Finalizar corte");
+            m_btnFinalizar->setObjectName("primaryButton");
+            m_btnFinalizar->setDefault(true);
+            btnRow->addWidget(m_btnFinalizar);
+        }
+    }
+
+    mainLayout->addLayout(btnRow);
 }
 
 void CorteDialog::setupConnections() {
-    connect(m_btnPdf,       &QPushButton::clicked, this, &CorteDialog::onExportarPdfClicked);
-    connect(m_btnConfirmar, &QPushButton::clicked, this, &CorteDialog::onConfirmarClicked);
+    connect(m_btnPdfInterno,   &QPushButton::clicked, this, [this]() { onExportarPdf(true);  });
+    connect(m_btnPdfProveedor, &QPushButton::clicked, this, [this]() { onExportarPdf(false); });
+    if (m_btnGuardarPrecorte)
+        connect(m_btnGuardarPrecorte, &QPushButton::clicked, this, &CorteDialog::onGuardarPrecorteClicked);
+    if (m_btnFinalizar)
+        connect(m_btnFinalizar, &QPushButton::clicked, this, &CorteDialog::onFinalizarCorteClicked);
 }
 
 void CorteDialog::onCantidadesChanged() {
@@ -231,7 +261,7 @@ void CorteDialog::recalcularTotales() {
 
         pagoTotal += m_productos[i].costo * vendida;
         devTotal  += devuelta;
-        ganancia  += (m_productos[i].precioFinal - m_productos[i].costo) * vendida;
+        ganancia  += m_productos[i].comision * vendida;
         ivaTrasl  += m_productos[i].ivaTrasladado;
         ivaAcred  += m_productos[i].ivaAcreditable;
         ivaNeto   += m_productos[i].ivaNetoPagar;
@@ -246,15 +276,17 @@ void CorteDialog::recalcularTotales() {
     m_lblIvaNeto->setText(loc.toCurrencyString(ivaNeto));
 }
 
-void CorteDialog::onExportarPdfClicked() {
+void CorteDialog::onExportarPdf(bool interno) {
     QString emisor = m_concesion.emisorNombre.isEmpty() ? "SinDistribuidor" : m_concesion.emisorNombre;
     QString folio  = m_concesion.folio.isEmpty()        ? "SinFolio"        : m_concesion.folio;
     QString fecha  = QDate::currentDate().toString("yyyy-MM-dd");
-    QString nombreSugerido = QString("Corte_%1_%2_%3.pdf")
-                             .arg(emisor.simplified().replace(' ', '_'), folio, fecha);
+    QString prefijo = interno ? "CorteCI" : "CorteP";
+    QString nombreSugerido = QString("%1_%2_%3_%4.pdf")
+                             .arg(prefijo, emisor.simplified().replace(' ', '_'), folio, fecha);
 
     QString filePath = QFileDialog::getSaveFileName(
-        this, "Guardar corte PDF", nombreSugerido, "PDF (*.pdf)");
+        this, interno ? "Guardar corte interno PDF" : "Guardar corte proveedor PDF",
+        nombreSugerido, "PDF (*.pdf)");
     if (filePath.isEmpty()) return;
 
     // Construir lista de productos con las cantidades actuales del dialogo
@@ -268,21 +300,27 @@ void CorteDialog::onExportarPdfClicked() {
     // Recalcular ganancia con los valores actuales del dialogo (pueden diferir de la DB)
     double gananciaActual = 0.0;
     for (const auto& p : productosActuales)
-        gananciaActual += (p.precioFinal - p.costo) * p.cantidadVendida;
+        gananciaActual += p.comision * p.cantidadVendida;
     corte.gananciaEstimada = gananciaActual;
 
     // Cargar config de libreria y generar/obtener folio del corte
     Calculadora::LibreriaConfigRepository cfgRepo(m_concesionRepo.database());
     Calculadora::FolioRepository          folioRepo(m_concesionRepo.database());
-    const auto   config        = cfgRepo.load();
-    const QString folioDoc     = folioRepo.getFolioCorte(m_concesion.id, m_concesion.tipoDocumento);
+    const auto    config      = cfgRepo.load();
+    const QString baseFolio   = folioRepo.getFolioCorte(m_concesion.id, m_concesion.tipoDocumento);
+    const QString folioDoc    = interno ? ("CI-" + baseFolio) : baseFolio;
 
     const bool includeFirmas = QMessageBox::question(
         this, "Sección de firmas",
         "¿Desea incluir la sección de firmas en el PDF?",
         QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes;
 
-    if (!CortePdfExporter::exportar(m_concesion, productosActuales, corte, config, folioDoc, filePath, includeFirmas)) {
+    const bool preview = m_concesion.activa;  // true para activa y pre-corte
+    bool ok = interno
+        ? CortePdfExporter::exportar(m_concesion, productosActuales, corte, config, folioDoc, filePath, includeFirmas, preview)
+        : CortePdfExporter::exportarProveedor(m_concesion, productosActuales, corte, config, folioDoc, filePath, includeFirmas, preview);
+
+    if (!ok) {
         QMessageBox::critical(this, "Error", "No se pudo generar el PDF.");
     } else {
         QMessageBox::information(this, "PDF generado",
@@ -290,7 +328,29 @@ void CorteDialog::onExportarPdfClicked() {
     }
 }
 
-void CorteDialog::onConfirmarClicked() {
+void CorteDialog::onGuardarPrecorteClicked() {
+    // Guardar cantidades vendidas en DB
+    for (int i = 0; i < m_productos.size(); ++i) {
+        auto* spin = qobject_cast<QSpinBox*>(m_tabla->cellWidget(i, COL_VEND));
+        if (!spin) continue;
+        m_productoRepo.updateCantidadVendida(m_productos[i].id, spin->value());
+    }
+    // Marcar la concesion como en pre-corte
+    if (!m_concesionRepo.guardarPrecorte(m_concesion.id))
+        qWarning() << "CorteDialog: no se pudo guardar el pre-corte id=" << m_concesion.id;
+    accept();
+}
+
+void CorteDialog::onFinalizarCorteClicked() {
+    int ret = QMessageBox::warning(
+        this, "Finalizar corte",
+        "¿Está seguro de finalizar el corte?\n\n"
+        "Esta acción cerrará definitivamente la concesión y no podrá\n"
+        "modificarse. Asegúrese de haber revisado los documentos de\n"
+        "pre-corte antes de continuar.",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+
     // Guardar cantidades vendidas en DB
     for (int i = 0; i < m_productos.size(); ++i) {
         auto* spin = qobject_cast<QSpinBox*>(m_tabla->cellWidget(i, COL_VEND));

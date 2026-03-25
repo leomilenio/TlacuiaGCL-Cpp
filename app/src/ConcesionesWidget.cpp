@@ -365,10 +365,14 @@ void ConcesionesWidget::refresh() {
 
         // Barra de color izquierda (indica estado)
         auto st = c.activa ? c.status() : Calculadora::ConcesionStatus::Pendiente;
+        // Para pre-corte usar color naranja en la barra lateral
+        const QString barColor = (!c.activa) ? "#9E9E9E"
+                               : c.enPrecorte ? "#E65100"
+                               : badgeColor(st);
         auto* colorBar = new QFrame();
         colorBar->setFixedWidth(4);
         colorBar->setStyleSheet(
-            QString("background-color: %1; border-radius: 2px;").arg(badgeColor(st)));
+            QString("background-color: %1; border-radius: 2px;").arg(barColor));
 
         // Texto: emisor + folio en una linea, dias en otra
         auto* textBlock  = new QWidget();
@@ -398,8 +402,20 @@ void ConcesionesWidget::refresh() {
         textLayout->addWidget(bottomLine);
 
         // Badge de estado
-        auto* badge = new QLabel(c.activa ? statusText(st) : "Cerrada");
-        badge->setStyleSheet(badgeStyle(st));
+        QString badgeTxt;
+        QString badgeSty;
+        if (!c.activa) {
+            badgeTxt = "Cerrada";
+            badgeSty = "background:#9E9E9E; color:white; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:bold;";
+        } else if (c.enPrecorte) {
+            badgeTxt = "Pre-corte";
+            badgeSty = "background:#E65100; color:white; padding:2px 8px; border-radius:3px; font-size:11px; font-weight:bold;";
+        } else {
+            badgeTxt = statusText(st);
+            badgeSty = badgeStyle(st);
+        }
+        auto* badge = new QLabel(badgeTxt);
+        badge->setStyleSheet(badgeSty);
         badge->setAlignment(Qt::AlignCenter);
         badge->setFixedHeight(22);
         badge->setMinimumWidth(70);

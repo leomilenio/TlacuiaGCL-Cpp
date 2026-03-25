@@ -45,10 +45,12 @@ void drawFooter(QPainter& painter,
 
 // Renderiza doc→printer con pie en cada página.
 // doc ya debe tener setPaintDevice+setHtml+setPageSize aplicados.
+// watermarkText: si no está vacío, dibuja una marca de agua diagonal en cada página.
 void renderPages(QTextDocument& doc, QPrinter& printer,
                  qreal footerHPx, qreal lineGapPx,
                  const QRectF& contentPx, const QSizeF& docSize,
                  const QString& folio, const QString& fecha,
-                 const QString& contactLine);
+                 const QString& contactLine,
+                 const QString& watermarkText = QString());
 
 } // namespace App::Pdf

@@ -24,8 +24,9 @@ public:
 
 private slots:
     void onCantidadesChanged();
-    void onExportarPdfClicked();
-    void onConfirmarClicked();
+    void onExportarPdf(bool interno);
+    void onGuardarPrecorteClicked();
+    void onFinalizarCorteClicked();
 
 private:
     void setupUi();
@@ -44,8 +45,10 @@ private:
     QLabel*       m_lblIvaTrasl   = nullptr;
     QLabel*       m_lblIvaAcred   = nullptr;
     QLabel*       m_lblIvaNeto    = nullptr;
-    QPushButton*  m_btnPdf        = nullptr;
-    QPushButton*  m_btnConfirmar  = nullptr;
+    QPushButton*  m_btnPdfInterno        = nullptr;
+    QPushButton*  m_btnPdfProveedor      = nullptr;
+    QPushButton*  m_btnGuardarPrecorte   = nullptr;  // visible en modo activa
+    QPushButton*  m_btnFinalizar         = nullptr;  // visible en modo pre-corte
 };
 
 } // namespace App

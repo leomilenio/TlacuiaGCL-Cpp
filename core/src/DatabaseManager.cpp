@@ -193,6 +193,11 @@ bool DatabaseManager::runMigrations() {
     if (current < 12) {
         if (!migrateV11toV12()) return false;
         setSchemaVersion(12);
+        current = 12;
+    }
+    if (current < 13) {
+        if (!migrateV12toV13()) return false;
+        setSchemaVersion(13);
     }
 
     // Si se ejecutó alguna migración, hacer checkpoint para consolidar los cambios
@@ -747,6 +752,19 @@ bool DatabaseManager::migrateV11toV12() {
         }
     }
     qDebug() << "Migracion V11->V12 completada (direccion).";
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// V12 → V13: añade columna en_precorte a concesiones.
+// ---------------------------------------------------------------------------
+bool DatabaseManager::migrateV12toV13() {
+    QSqlQuery q(m_db);
+    if (!q.exec("ALTER TABLE concesiones ADD COLUMN en_precorte INTEGER NOT NULL DEFAULT 0")) {
+        qCritical() << "migrateV12toV13:" << q.lastError().text();
+        return false;
+    }
+    qDebug() << "Migracion V12->V13 completada (en_precorte).";
     return true;
 }
 

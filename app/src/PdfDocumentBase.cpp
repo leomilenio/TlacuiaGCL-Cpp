@@ -85,22 +85,11 @@ QString buildHeaderHtml(const Calculadora::LibreriaConfig& config,
                       .arg(partes.join(",&nbsp; "));
     }
 
-    // Filas de contacto en el encabezado (telefonos + email)
-    QString telStr;
-    for (const auto& t : config.telefonos) {
-        if (t.numero.isEmpty()) continue;
-        if (!telStr.isEmpty()) telStr += " &nbsp;·&nbsp; ";
-        if (!t.tipo.isEmpty() && t.tipo != "Otro")
-            telStr += "<b>" + esc(t.tipo) + ":</b>&nbsp;";
-        telStr += esc(t.numero);
-    }
+    // Fila de email en el encabezado (teléfonos van solo al pie de página)
     QString extraContactHtml;
-    if (!telStr.isEmpty())
-        extraContactHtml += QString("<tr><td class=\"info-lbl\">Tel:</td>"
-                                    "<td>%1</td></tr>\n").arg(telStr);
     if (!config.email.isEmpty())
-        extraContactHtml += QString("<tr><td class=\"info-lbl\">Email:</td>"
-                                    "<td>%1</td></tr>\n").arg(esc(config.email));
+        extraContactHtml = QString("<tr><td class=\"info-lbl\">Email:</td>"
+                                   "<td>%1</td></tr>\n").arg(esc(config.email));
 
     return QString(R"(
 <table class="hdr-main" cellpadding="0" cellspacing="0">
@@ -219,7 +208,8 @@ void renderPages(QTextDocument& doc, QPrinter& printer,
                  qreal footerHPx, qreal lineGapPx,
                  const QRectF& contentPx, const QSizeF& docSize,
                  const QString& folio, const QString& fecha,
-                 const QString& contactLine)
+                 const QString& contactLine,
+                 const QString& watermarkText)
 {
     const qreal res   = printer.resolution();
     const int   total = doc.pageCount();
@@ -234,6 +224,24 @@ void renderPages(QTextDocument& doc, QPrinter& printer,
         doc.drawContents(&painter, QRectF(0, i * docSize.height(),
                                           docSize.width(), docSize.height()));
         painter.restore();
+
+        // Marca de agua diagonal (solo en modo preview)
+        if (!watermarkText.isEmpty()) {
+            painter.save();
+            painter.setOpacity(0.10);
+            QFont wf;
+            wf.setPixelSize(qRound(60.0 * res / 72.0));
+            wf.setBold(true);
+            painter.setFont(wf);
+            painter.setPen(QColor("#1a3a5c"));
+            painter.translate(contentPx.width() / 2.0,
+                              i * docSize.height() + docSize.height() / 2.0);
+            painter.rotate(-45);
+            painter.drawText(QRectF(-contentPx.width() / 2.0, -docSize.height() / 2.0,
+                                     contentPx.width(), docSize.height()),
+                             Qt::AlignCenter, watermarkText);
+            painter.restore();
+        }
 
         // Pie de página
         drawFooter(painter,
